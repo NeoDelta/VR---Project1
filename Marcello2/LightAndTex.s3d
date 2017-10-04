@@ -1,0 +1,702 @@
+#define _S3D_ALLOW_OBSOLETE_FUNCTIONS
+// Global scene parameters
+
+SET SCENE_FOV = 60;
+SET SCENE_NEAR = 0.5;
+SET SCENE_FAR = 1000;
+
+
+// Needed includes 
+#include <Script3d.h>
+#include <GLConst.h>
+#include <Impulse.h>
+#include <VirtualKey.h>
+
+// Global variables
+
+// Camera globals
+var CamPos = [0.0,5.0,30.0];  	// camera position
+
+// Light globals
+var Luce;
+var radius = 10;
+var PosL = [0.0, 0.0, radius];		// default light position
+var ang_vert = 0.0;
+var ang_oriz = 0.0;
+var m_luce, o_luce;
+var m_sfera;
+var mat;
+
+var ambient_color  = [0.5, 0.5, 0.5, 1.0];
+var diffuse_color  = [0.5, 0.5, 0.5, 1.0];
+var specular_color = [0.5, 0.5, 0.5, 1.0];
+var shininess = 64;
+
+var ambient_light  = [0.5, 0.5, 0.5];
+var diffuse_light  = [0.5, 0.5, 0.5];
+var specular_light = [0.5, 0.5, 0.5];
+
+var light_enabled;
+var texture_enabled;
+var wireframe_enabled;
+
+var segs = 1;
+
+#define AMB 	0
+#define DIF 	1
+#define SPC 	2
+#define SHN 	3
+#define AMB_L 	4
+#define DIF_L 	5
+#define SPC_L	6
+#define N_SEGS	7
+
+#define QUAD    0
+#define SFERA   1
+
+var active_component = AMB;
+var active_object = QUAD;
+var texSimpson;
+
+function KeyStatus(keycode);
+function KeyBoardManager();
+function CameraMoveMouse();
+function DrawGrid();
+function DrawQuad(size, tc);
+function DrawTextLayer();
+function Saturate();
+
+//----------------------------------------------------------------------
+function OnDownload()
+//----------------------------------------------------------------------
+{
+	// TO DO
+	FileDownload("Data.zip");	// Download di un unico archivio contenente le mesh e le texture
+}
+
+//----------------------------------------------------------------------
+function OnInit(params)
+//----------------------------------------------------------------------
+{
+	ConsoleFont("Lucida console",11);
+	// Camera
+	CameraSetPosition(CamPos);
+	ShowCursor(false);
+
+	// Creazione luce e settaggio parametri (componenti colore e posizione)
+	Luce = CVmLight();
+	Luce.Enable();	
+	Luce.SetAmbient(  ambient_light[0],  ambient_light[1],  ambient_light[2]);		
+	Luce.SetDiffuse(  diffuse_light[0],  diffuse_light[1],  diffuse_light[2]);
+	Luce.SetSpecular( specular_light[0], specular_light[1], specular_light[2]);	
+	Luce.SetPosition(PosL);
+	
+	// Creazione oggetto indicante la posizione della luce
+	m_luce = CVmNewMesh(VRP_SPHERE,30,10);
+	m_luce.Normalize(1);
+	o_luce = CVmObj(m_luce);
+	o_luce.SetPosition(posL);
+	
+	// Creazione di una sfera "target" dell'illuminazione (l'altro target sarà un quad che disegneremo direttamente in OpenGL)
+	m_sfera = CVmNewMesh(VRP_SPHERE,30,10);
+	m_sfera.Normalize(10);
+	
+	// Caricamento della texture
+	texSimpson = CVmTexture("simpson.jpg");
+	
+	// Inizializzazione flag abilitazione lighting e texturing (si legge cosa è abilitato al momento)	
+	light_enabled = glGet(GL_LIGHTING);
+	texture_enabled = glGet(GL_TEXTURE_2D);
+	wireframe_enabled = false;
+
+	// Abilitazione blending (necessario per le trasparenze);
+	glEnable(GL_BLEND);	
+	
+	mat = CVmMaterial();
+	
+	SetFrameRate(60);
+}
+
+
+//----------------------------------------------------------------------
+function OnFrame()
+//----------------------------------------------------------------------
+{
+	KeyboardManager();						// Gestisco le pressioni dei tasti
+	//SetXVRWindowFullScreen(true);
+	// Camera manager
+	CameraMoveMouse();						// Gestisco il movimento della camera con il mouse
+	ShowCursor(false);
+	
+	SceneBegin();			
+		DrawGrid();							// Disegna la griglia
+		DrawQuad(3, 1);						// Disegna il quadrilatero con gli attributi immessi da tastiera in tempo reale	
+		glColor(diffuse_light);				// Imposta il colore della sfera rappresentante la luce (è = al colore della componente diffuse della luce)
+		o_luce.Draw(VR_NO_SHADING);		// Disegna la sfera rappresentante la luce
+			// Nota: il flag VR_NO_SHADING disabilita il lighting SOLO per questo oggetto..
+			// Il colore usato per questo oggetto è allora quello relativo all'ultimo GLColor effettuato.
+			// E' necessario disabilitare lo shading perchè la sfera è disegnata esattamente nella posizione della luce.
+			// la luce (puntiforme) sarebbe cioè contenuta dentro la sfera e dunque risulterebbe invisibile all'esterno in assenza
+			// di altre sorgenti di luce.								
+	SceneEnd();
+	
+	// Scrive le istruzioni a schermo
+	DrawTextLayer();
+	
+}
+
+
+//-------------------------------------------------------------
+// Gestione di Tastiera, Mouse etc.
+//-------------------------------------------------------------
+
+
+function DownloadReady( RequestID )
+{
+	// TO DO
+}
+
+
+
+function OnTimer()
+{
+	// TO DO
+}
+
+
+
+function OnExit()
+{
+	// TO DO
+}
+
+
+//----------------------------------------------------------------------
+function DrawQuad(size, tc)
+//----------------------------------------------------------------------
+{
+	// Salva lo stato corrente di lighting e texturing per ripristinarlo a fine tracciamento del quadrilatero
+	var light_status = glGet(GL_LIGHTING);
+	var texture_status = glGet(GL_TEXTURE_2D);
+	
+	if (light_enabled)
+	{
+		// Se si vuole abilitare il lighting, bisogna dirlo esplicitamente a OpenGL
+		glEnable(GL_LIGHTING);
+		// Quindi si specifica il materiale da utilizzare per il lighting delle successive primitive geometriche
+		// OpenGL è una macchina a stati: finchè non si cambia materiale, rimane attivo l'ultimo settato.
+		glMaterial(GL_FRONT, GL_AMBIENT,   ambient_color);
+		glMaterial(GL_FRONT, GL_DIFFUSE,   diffuse_color);
+		glMaterial(GL_FRONT, GL_SPECULAR,  specular_color);
+		glMaterial(GL_FRONT, GL_SHININESS, shininess);
+		// Proprio perchè OpenGL è una macchina a stati, in realtà è inutile risettare ogni frame questi parametri,
+		// ma sarebbe sufficiente settarli solo quando si cambia da light_enabled = true -> false e viceversa.
+		
+		// Per oggetti di tipo newmesh, invece, vanno riempiti i campi del materiale "mat" che successivamente verrà forzato.
+		// I comandi opengl "glMaterial" non avrebbero effetto perchè verrebbero sovrascritti dalle informazioni sul materiale 
+		// presente nella mesh (l'unica è dunque "forzare" il materiale)
+		mat.Ambient   = ambient_color;
+		mat.Diffuse   = diffuse_color;
+		mat.Specular  = specular_color;
+		mat.Shininess = shininess;
+		m_sfera.ForceMaterial(mat);
+	}
+	else
+	{
+		// Se si vuole disabilitare il lighting, bisogna dirlo esplicitamente a OpenGL
+		glDisable(GL_LIGHTING);
+		// In assenza di lighting, è possibile specificare direttamente i colori dei vertici.
+		glColor(diffuse_color);
+	}	
+	
+	if (texture_enabled)
+	{
+		// Se si vuole abilitare il texturing, bisogna dirlo esplicitamente a OpenGL
+		glEnable(GL_TEXTURE_2D);
+		SetActiveTexture(texSimpson,VR_NO_FILTER,0);	
+		mat.SetTexture(texSimpson);
+		m_sfera.ForceMaterial(mat);
+
+	}
+	else
+	{
+		// Se si vuole disabilitare il texturing, bisogna dirlo esplicitamente a OpenGL
+		glDisable(GL_TEXTURE_2D);	
+		mat.SetTexture(0);
+		m_sfera.ForceMaterial(mat);
+
+	}
+
+	var i,j;
+	var delta = (2.0*size)/tofloat(segs);
+	
+	if (wireframe_enabled)
+		glPolygonMode(GL_FRONT,GL_LINE);
+	else
+		glPolygonMode(GL_FRONT,GL_FILL);
+		
+	if (active_object == SFERA)
+	{					
+		m_sfera.Draw();
+	}
+	else
+	{
+		// Comincia il tracciamento del quadrilatero		
+		glBegin(GL_QUADS);
+			// Specifico la normale (necessario perchè il lighting funzioni correttamente)
+			glNormal(0,0,1);
+			// ATTENZIONE! Per motivi "storici" XVR carica le texture invertite sull'asse V (quello verticale)
+			// Rispetto a OpenGL standard, dunque, le V coordinates vanno invertite:
+			for (i=0;i<segs;i++)
+				for (j=0;j<segs;j++)
+				{
+					glTexCoord(0,1);				// Vertice in basso a sinistra: in OpenGL standard sarebbbe glTexCoord(0,0)			
+					glVertex(-size+i*delta, -size+j*delta, 0);	
+					glTexCoord(1,1);				// Vertice in basso a destra: in OpenGL standard sarebbbe glTexCoord(0,1)
+					glVertex(-size+(i+1)*delta, -size+j*delta, 0);
+					glTexCoord(1,0);				// Vertice in alto a destra: in OpenGL standard sarebbbe glTexCoord(1,1)
+					glVertex(-size+(i+1)*delta,  -size+(j+1)*delta, 0);		
+					glTexCoord(0,0);				// Vertice in alto a sinistra: in OpenGL standard sarebbbe glTexCoord(1,0)
+					glVertex(-size+i*delta,  -size+(j+1)*delta, 0);		
+				}
+		glEnd();
+	}
+	
+	// Ripristino le condizioni originali su lighting e texturing
+	if (light_status)
+		glEnable(GL_LIGHTING);
+	else
+		glDisable(GL_LIGHTING);
+		
+	if (texture_status)
+		glEnable(GL_TEXTURE_2D);
+	else
+		glDisable(GL_TEXTURE_2D);	
+
+	
+	
+}
+
+
+//----------------------------------------------------------------------
+function KeyboardManager()
+//----------------------------------------------------------------------
+{
+	// Immissione parametri posizione luce (raggio, angolo verticale e angolo orizzontale)	
+	if (KeyPressed(VK_PRIOR))
+		radius += 0.1;		
+	if (KeyPressed(VK_NEXT))
+		radius -= 0.1;	
+	if (radius < 0.0) radius = 0.0;
+	
+	if (KeyPressed(VK_LEFT))
+		ang_oriz -= 0.5;		
+	if (KeyPressed(VK_RIGHT))
+		ang_oriz += 0.5;	
+			
+	if (KeyPressed(VK_UP))
+		ang_vert += 0.5;		
+	if (KeyPressed(VK_DOWN))
+		ang_vert -= 0.5;	
+		
+	if (ang_oriz < -90.0) ang_oriz = -90.0;
+	else if (ang_oriz > 90.0) ang_oriz = 90.0;
+	if (ang_vert > 0.0) ang_vert = 0.0;
+	else if (ang_vert < -180.0) ang_vert = -180.0;
+	
+	// Calcolo posizione della luce	
+	posL = [0, radius, 0];
+	posL = VectorRotate(-ang_vert, 1, 0, 0, posL);	
+	var temp = VectorRotate(ang_oriz, 0, 1, 0, [posL[0],0,posL[2]]);
+	temp[1] = posL[1];
+	posL = temp;	
+	
+	// Posizionamento della luce e della sfera che la rappresenta
+	Luce.SetPosition(posL);	
+	o_luce.SetPosition(posL);	
+	
+	// Immissione stato di lighting, texturing e oggetto attivo
+	if (KeyStatus("L"))
+		light_enabled = !light_enabled;
+	if (KeyStatus("T"))
+		texture_enabled = !texture_enabled;	
+	if (KeyStatus("Z"))
+		wireframe_enabled = !wireframe_enabled;
+	if (KeyStatus("O"))
+		active_object = 1 - active_object;
+	
+	// Settaggio componente attiva
+	if (KeyPressed("1"))
+		active_component = AMB;
+	if (KeyPressed("2"))
+		active_component = DIF;
+	if (KeyPressed("3"))
+		active_component = SPC;
+	if (KeyPressed("4"))
+		active_component = SHN;
+	if (KeyPressed("5"))
+		active_component = AMB_L;
+	if (KeyPressed("6"))
+		active_component = DIF_L;
+	if (KeyPressed("7"))
+		active_component = SPC_L;
+	if (KeyPressed("8"))
+		active_component = N_SEGS;
+	
+	// Settaggio subcomponenti della componente attiva: settaggio incrementi	
+	var delta_x = 0.0;
+	var delta_y = 0.0;
+	var delta_z = 0.0;
+	var delta_a = 0.0;
+	
+	if (KeyPressed("Q"))
+		delta_x += 0.01;
+	if (KeyPressed("A"))
+		delta_x -= 0.01;
+	if (KeyPressed("W"))
+		delta_y += 0.01;
+	if (KeyPressed("S"))
+		delta_y -= 0.01;
+	if (KeyPressed("E"))
+		delta_z += 0.01;
+	if (KeyPressed("D"))
+		delta_z -= 0.01;			
+	if (KeyPressed("R"))
+		delta_a += 0.01;
+	if (KeyPressed("F"))
+		delta_a -= 0.01;
+	
+	static var PrecX = 0, PrecY = 0;
+	PrecX = Mouse.X;
+	PrecY = Mouse.Y;
+	var CameraMatrix = CameraGetMatrix();
+	var CameraPos = CameraGetPosition();
+	var vectZ = [0,0,1];
+	if (KeyPressed("W")) {
+		CameraPos -= CameraGetZAxis() * 0.1;
+	}
+	if (KeyPressed("A")) {
+		CameraPos -= CameraGetXAxis() * 0.1;
+	}
+	if (KeyPressed("S")) {
+		CameraPos += CameraGetZAxis() * 0.1;
+	}
+	if (KeyPressed("D")) {
+		CameraPos += CameraGetXAxis() * 0.1;
+	}
+	
+	CameraPos = [CameraPos.x, 5, CameraPos.z];
+	CameraSetPosition(CameraPos);
+		
+	// Settaggio subcomponenti della componente attiva: incremento delle componenti
+	switch (active_component)
+	{
+		case AMB:
+			ambient_color += [delta_x,delta_y,delta_z,delta_a];		
+		break;
+		case DIF:
+			diffuse_color += [delta_x,delta_y,delta_z,delta_a];		
+		break;
+		case SPC:
+			specular_color += [delta_x,delta_y,delta_z,delta_a];		
+		break;
+		case SHN:
+			shininess += delta_x*100;
+		break;
+		case N_SEGS:
+			segs += delta_x*100;
+			if (segs < 1) segs = 1;
+		break;
+		case AMB_L:
+			ambient_light += [delta_x,delta_y,delta_z];		
+		break;
+		case DIF_L:
+			diffuse_light += [delta_x,delta_y,delta_z];		
+		break;
+		case SPC_L:
+			specular_light += [delta_x,delta_y,delta_z];		
+		break;												
+	}
+	
+	// Gestione saturazioni componenti (tutte comprese tra 0 e 1, tranne shininess che varia tra 0 e 128)
+	Saturate();
+	
+	// Applicazione componenti della luce dopo le (eventuali) modifiche.
+	Luce.SetAmbient(  ambient_light[0],  ambient_light[1],  ambient_light[2]);
+	Luce.SetDiffuse(  diffuse_light[0],  diffuse_light[1],  diffuse_light[2]);
+	Luce.SetSpecular( specular_light[0], specular_light[1], specular_light[2]);
+}
+
+
+
+//----------------------------------------------------------------------
+function CameraMoveMouse()
+//----------------------------------------------------------------------
+{
+	static var InMouseR = false, InMouseL = false;				
+	static var PrecX = GetScreenResolution().x/2, PrecY = GetScreenResolution().y;			
+	// Change these values to modify the mouse sensitivity
+	var TR_SENSITIVITY  = 0.001;
+	var ROT_SENSITIVITY = 0.01;
+	
+	// Mouse manager
+	CameraRotate(( Mouse.X-PrecX)*ROT_SENSITIVITY,0,1,0);
+	CameraRotateABS((Mouse.Y-PrecY)*ROT_SENSITIVITY,1,0,0);
+	Mouse.SetStatus(GetScreenResolution().x/2,GetScreenResolution().y/2);
+	//Mouse.X = 0;
+	//Mouse.Y = 0;
+	//SetCursorPos(0.5, 0.5);
+	PrecX = Mouse.X;
+	PrecY = Mouse.Y;
+	if(Mouse.ButtonL && !Mouse.ButtonR)
+	{
+		//====  Left Button: Camera rotation  ====//
+		if (InMouseL)
+		{			
+			CameraRotate(( Mouse.X-PrecX)*ROT_SENSITIVITY,0,1,0);
+			CameraRotateABS((Mouse.Y-PrecY)*ROT_SENSITIVITY,1,0,0);	
+			
+			PrecX = Mouse.X;
+			PrecY = Mouse.Y;	
+		}
+		else
+		{
+			PrecX = Mouse.X;
+			PrecY = Mouse.Y;
+		}
+		InMouseL = true;
+		InMouseR = false;
+	}
+	else
+	if(Mouse.ButtonR)
+	{
+		//====  Right Button: Camera translation  ====//
+		if (InMouseR)
+		{
+			var CameraMatrix = CameraGetMatrix();
+			var CameraPos = CameraGetPosition();
+			if (!Mouse.ButtonL)
+			//====  Translation on X and Z axis ====//
+				CameraPos += CameraGetZAxis() * (Mouse.y-PrecY)*TR_SENSITIVITY + CameraGetXAxis() * (Mouse.X- PrecX)*TR_SENSITIVITY;
+			else
+			//====  Right + Left Button: Translation on Y axis ====//
+				CameraPos -= CameraGetYAxis() * (Mouse.y-PrecY)*TR_SENSITIVITY;
+			CameraSetPosition(CameraPos);		
+		}
+		else
+		{
+			PrecX = Mouse.X;
+			PrecY = Mouse.Y;
+		}
+		InMouseR = true;
+		InMouseL = false;
+	}	
+	else
+	{
+		InMouseR = false;
+		InMouseL = false;
+	}
+
+}
+
+//----------------------------------------------------------------------
+function DrawGrid()
+//----------------------------------------------------------------------
+{
+	var i;
+	glLineWidth(1);
+	
+	glDisable(GL_LIGHTING);
+	glDisable(GL_TEXTURE_2D);
+	glColor(0.5,0.5,0.5);
+	
+	glBegin(GL_LINES);
+	for( i= -100; i<=100; i+=10 )
+	{
+		glVertex(i, 0,  100 );
+		glVertex(i, 0, -100 );
+		
+		glVertex( 100, 0, i );
+		glVertex(-100, 0, i );
+	}
+	glEnd();
+	glEnable(GL_LIGHTING);
+	glEnable(GL_TEXTURE_2D);
+}
+
+
+
+
+//----------------------------------------------------------------------
+function KeyStatus(keycode)
+//----------------------------------------------------------------------
+{
+	if (valtype(keycode) == "S")
+	{
+		keycode = asc(keycode);
+	}
+		
+	static var keys_stati = vector(255);
+	if (KeyPressed(keycode))
+	{	
+		if (keys_stati[keycode] == 0.0)
+		{
+			keys_stati[keycode] = 1.0;
+			return true;
+		}
+	}
+	else
+	{
+		keys_stati[keycode] = 0.0;
+		return false;
+	}
+	return false;		
+}
+
+
+//----------------------------------------------------------------------
+function DrawTextLayer()
+//----------------------------------------------------------------------
+{
+	var testo="";
+	var testo2="";
+	var testo3="";
+	
+	if (light_enabled)
+		testo = "Lighting abilitato";
+	else
+		testo = "Lighting disabilitato";
+	
+	
+	ConsoleText(0.01,0.98,testo);
+	
+	if (texture_enabled)
+		testo = "Texturing abilitato";
+	else
+		testo = "Texturing disabilitato";
+	
+	if (wireframe_enabled)
+		testo += " - Wireframe abilitato";
+	else
+		testo += " - Wireframe disabilitato";
+		
+	ConsoleText(0.01,0.95,testo);
+	
+	
+	
+	switch (active_component)
+	{
+		case AMB:
+			testo = "Material - Ambient";
+			testo2 = sprintf ("R: %f - G: %f - B: %f - A: %f",ambient_color[0],ambient_color[1],ambient_color[2],ambient_color[3]);
+		break;
+		case DIF:
+			testo = "Material - Diffuse";
+			testo2 = sprintf ("R: %f - G: %f - B: %f - A: %f",diffuse_color[0],diffuse_color[1],diffuse_color[2],diffuse_color[3]);
+		break;
+		case SPC:
+			testo = "Material - Specular";
+			testo2 = sprintf ("R: %f - G: %f - B: %f - A: %f",specular_color[0],specular_color[1],specular_color[2],specular_color[3]);
+		break;
+		case SHN:
+			testo = "Material - Shininess";
+			testo2 = sprintf ("%f",shininess);
+		break;
+		case AMB_L:
+			testo = "Light - Ambient";
+			testo2 = sprintf ("R: %f - G: %f - B: %f",ambient_light[0],ambient_light[1],ambient_light[2]);
+		break;
+		case DIF_L:
+			testo = "Light - Diffuse";
+			testo2 = sprintf ("R: %f - G: %f - B: %f",diffuse_light[0],diffuse_light[1],diffuse_light[2]);
+		break;
+		case SPC_L:
+			testo = "Light - Specular";
+			testo2 = sprintf ("R: %f - G: %f - B: %f",specular_light[0],specular_light[1],specular_light[2]);
+		break;												
+		case N_SEGS:
+			testo = "Quad divisions";
+			testo2 = sprintf ("Segs: %f",segs);
+		break;	
+	}
+	
+	testo3 = "Componente attiva: " + testo;
+	ConsoleText(0.01,0.92,testo3);
+	ConsoleText(0.01,0.895,testo2);
+	
+	
+	ConsoleText(0.65,0.98, "La luce si muove su una semisfera:");	
+	ConsoleText(0.65,0.955, "   Frecce SX,DX:  +/- angolo orizzontale");	
+	ConsoleText(0.65,0.93,  "   Frecce UP,DWN: +/- angolo verticale");	
+	ConsoleText(0.65,0.905, "   Page UP,DWN:   +/- raggio");	
+	ConsoleText(0.65,0.88, "Selezione componente attiva:");
+	ConsoleText(0.65,0.855,"   1: Material, ambient");
+	ConsoleText(0.65,0.83, "   2: Material, diffuse");
+	ConsoleText(0.65,0.805,"   3: Material, specular");
+	ConsoleText(0.65,0.78, "   4: Material, shininess");
+	ConsoleText(0.83,0.855,"   5: Light, ambient");
+	ConsoleText(0.83,0.83, "   6: Light, diffuse");
+	ConsoleText(0.83,0.805,"   7: Light, specular");
+	ConsoleText(0.83,0.78,"   8: Quad divisions(segs)");
+	ConsoleText(0.65,0.755, "Modifica valore componenti:");
+	ConsoleText(0.65,0.73, "   Q,A: Red   +/-  (o shininess/segs +/-)");
+	ConsoleText(0.65,0.705,"   W,S: Green +/-");
+	ConsoleText(0.65,0.68, "   E,D: Blue  +/-");
+	ConsoleText(0.65,0.655,"   R,F: Alpha +/-");
+	ConsoleText(0.65,0.63, "Abilita/Disabilita:");
+	ConsoleText(0.65,0.605,"   L: Lighting");
+	ConsoleText(0.65,0.58, "   T: Texture Mapping");
+	ConsoleText(0.65,0.555,"   Z: Wireframe");
+	ConsoleText(0.65,0.53, "   O: Cambia oggetto (sfera/quad)");
+	ConsoleText(0.65,0.505,"      NB: texturing solo per quad");
+}	
+
+
+//----------------------------------------------------------------------
+function Saturate()
+//----------------------------------------------------------------------
+{
+	if (ambient_color[0] < 0) ambient_color[0] = 0; else if (ambient_color[0] > 1) ambient_color[0] = 1;				
+	if (ambient_color[1] < 0) ambient_color[1] = 0; else if (ambient_color[1] > 1) ambient_color[1] = 1;				
+	if (ambient_color[2] < 0) ambient_color[2] = 0; else if (ambient_color[2] > 1) ambient_color[2] = 1;				
+	if (ambient_color[3] < 0) ambient_color[3] = 0; else if (ambient_color[3] > 1) ambient_color[3] = 1;				
+	if (diffuse_color[0] < 0) diffuse_color[0] = 0; else if (diffuse_color[0] > 1) diffuse_color[0] = 1;				
+	if (diffuse_color[1] < 0) diffuse_color[1] = 0; else if (diffuse_color[1] > 1) diffuse_color[1] = 1;				
+	if (diffuse_color[2] < 0) diffuse_color[2] = 0; else if (diffuse_color[2] > 1) diffuse_color[2] = 1;				
+	if (diffuse_color[3] < 0) diffuse_color[3] = 0; else if (diffuse_color[3] > 1) diffuse_color[3] = 1;				
+	if (specular_color[0] < 0) specular_color[0] = 0; else if (specular_color[0] > 1) specular_color[0] = 1;				
+	if (specular_color[1] < 0) specular_color[1] = 0; else if (specular_color[1] > 1) specular_color[1] = 1;				
+	if (specular_color[2] < 0) specular_color[2] = 0; else if (specular_color[2] > 1) specular_color[2] = 1;				
+	if (specular_color[3] < 0) specular_color[3] = 0; else if (specular_color[3] > 1) specular_color[3] = 1;				
+	if (ambient_light[0] < 0) ambient_light[0] = 0; else if (ambient_light[0] > 1) ambient_light[0] = 1;				
+	if (ambient_light[1] < 0) ambient_light[1] = 0; else if (ambient_light[1] > 1) ambient_light[1] = 1;				
+	if (ambient_light[2] < 0) ambient_light[2] = 0; else if (ambient_light[2] > 1) ambient_light[2] = 1;				
+	if (ambient_light[3] < 0) ambient_light[3] = 0; else if (ambient_light[3] > 1) ambient_light[3] = 1;				
+	if (diffuse_light[0] < 0) diffuse_light[0] = 0; else if (diffuse_light[0] > 1) diffuse_light[0] = 1;				
+	if (diffuse_light[1] < 0) diffuse_light[1] = 0; else if (diffuse_light[1] > 1) diffuse_light[1] = 1;				
+	if (diffuse_light[2] < 0) diffuse_light[2] = 0; else if (diffuse_light[2] > 1) diffuse_light[2] = 1;				
+	if (diffuse_light[3] < 0) diffuse_light[3] = 0; else if (diffuse_light[3] > 1) diffuse_light[3] = 1;				
+	if (specular_light[0] < 0) specular_light[0] = 0; else if (specular_light[0] > 1) specular_light[0] = 1;				
+	if (specular_light[1] < 0) specular_light[1] = 0; else if (specular_light[1] > 1) specular_light[1] = 1;				
+	if (specular_light[2] < 0) specular_light[2] = 0; else if (specular_light[2] > 1) specular_light[2] = 1;				
+	if (specular_light[3] < 0) specular_light[3] = 0; else if (specular_light[3] > 1) specular_light[3] = 1;				
+	if (shininess < 0) shininess = 0; else if (shininess > 128) shininess = 128;				
+}
+
+
+/*
+//----------------------------------------
+//				GetSubsetMaterial()				
+//----------------------------------------
+VRmaterial* VRNewMesh::GetSubsetMaterial(int i)
+{
+	if (i<0 || i>=m_subs_counter) 
+		return NULL;
+
+	if (m_subs[i].num_mat >= 0) 
+		return(&(m_material[m_subs[i].num_mat])); 
+	else 
+		return NULL;
+
+}
+*/

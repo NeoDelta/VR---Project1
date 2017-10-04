@@ -1,0 +1,499 @@
+// Global scene parameters
+
+SET SCENE_FOV = 60;
+SET SCENE_NEAR = 0.5;
+SET SCENE_FAR = 1000;
+
+
+// Needed includes 
+#include <Script3d.h>
+#include <GLConst.h>
+#include <Impulse.h>
+#include <VirtualKey.h>
+
+// Global variables
+
+// Camera globals
+var Camera;
+var CamPos = [0.0,5.0,30.0];  	// camera position
+
+// Light globals
+var Luce;
+var PosL = [-10.0,20.0,50.0];		// default light position
+var mat;
+
+var m_teiera, o_teiera;			// mesh e obj per la teiera
+var m_cube, o_cube;				// mesh e obj per il cubo appoggiato sul piano					
+var m_ball, o_ball;				// mesh e obj per il pallone					
+var b_simpson, o_simpson;		// billboard e obj per l'immagine dei simpson
+var o_ball_padre;				// nodo padre per ball, per la creazione di una gerarchia
+
+var pos_cube    = [-5.0,0.0,0.0];	// posizione iniziale del cubo
+var pos_ball    = [2.0,0.0,0.0];	// posizione iniziale della palla
+var pos_simpson = [0.0,5.0,0.0];
+var mod_color   = [1.0,1.0,1.0,1.0];	// colore modulante (inizialmente bianco - dunque nessuna variazione: modulare vuol dire MOLTIPLICARE
+										// componente per componente)
+
+
+// Function declarations
+function CameraMoveMouse();
+function DrawGrid();
+function DrawQuad(size);
+
+
+
+var trigger_simpson_movement = false;
+var trigger_ball_rotate = false;
+var trigger_ball_padre_rotate = false;
+var trigger_cube_movement = false;
+var trigger_cube_hide_1st = false;
+var trigger_cube_hide_2nd = false;
+var trigger_cube_modulate_1st = false;
+var trigger_cube_force = false;
+var trigger_teiera_mirror_x = false;
+var trigger_teiera_mirror_y = false;
+var trigger_teiera_mirror_z = false;
+var trigger_axis = false;
+
+function KeyStatus(keycode);
+function KeyBoardManager();
+
+function OnDownload()
+{
+	// TO DO
+	FileDownload("Data.zip");	// Download di un unico archivio contenente le mesh e le texture
+}
+
+
+function OnInit(params)
+{
+	// Camera
+	Camera = CVmCamera();
+	Camera.SetPosition(CamPos);
+
+	// Light
+	Luce = CVmLight();
+	Luce.SetDiffuse(1,1,1);
+	Luce.SetAmbient(1,1,1);
+	Luce.SetSpecular(0.0, 0.0, 0.0);
+	Luce.Enable();	
+
+	// Creazione nuovo materiale (sul verdino...)
+	mat = CVmMaterial();
+	mat.ambient   = [0.0, 0.2, 0.0, 1.0];
+	mat.diffuse   = [0.0, 1.0, 0.0, 1.0];
+	mat.specular  = [0.1, 0.1, 0.1, 1.0];
+	mat.shininess = 10;
+
+
+	// Light initial position
+	Luce.SetPosition(PosL);
+
+	//TO DO
+	m_ball  = CVMNewMesh("ball.aam");
+	m_ball.CenterBoundingBox();
+	o_ball  = CVmObj(m_ball);
+	
+	o_ball_padre = CVmObj();
+	o_ball_padre.AddChild(o_ball, 5, 0, 0);
+	
+	m_teiera = CVMNewMesh("teiera.aam");
+	o_teiera = CVmObj(m_teiera);		// In assenza di setposition, viene collocato di default in [0,0,0]
+	m_teiera.Normalize(5);				// Forzo la mesh ad essere ridimensionata in modo che la dimensione maggiore della sua bbox sia 5
+	m_teiera.CenterBoundingBox();		// Sposto i vertici della mesh in modo che il sistema di riferimento locale risulti centrato rispetto alla sua bbox
+		
+	m_cube = CVMNewMesh("cubi.aam");
+	o_cube = CVmObj(m_cube);
+	o_cube.SetPosition(pos_cube);
+	
+	
+	b_simpson = CVmBillboard("simpson.jpg");
+	o_simpson = CVmObj();
+	o_simpson.LinkToBillboard(b_simpson);	
+	o_simpson.SetPosition(pos_simpson);	
+	
+	glEnable(GL_NORMALIZE);	// Abilitare se si prevede di usare scalature sugli obj, altrimenti è inutile (e dispendioso...)
+}
+
+
+
+function OnFrame()
+{
+	KeyboardManager();						// Gestisco le pressioni dei tasti
+	
+	// Camera manager
+	CameraMoveMouse();						// Gestisco il movimento della camera con il mouse
+	Luce.SetPosition(CameraGetPosition());	// Sposto la luce ogni volta nella posizione corrente della camera
+	
+	if (trigger_cube_movement)
+	{
+		pos_cube += [0.0, 0.01, 0.0];			// Imposto la variabile relativa alla posizione del cubo in modo che salga verso l'alto...
+		if (pos_cube[1] > 10)
+			pos_cube[1] = 10;					// ...fino ad un tetto massimo di 10
+		o_cube.SetPosition(pos_cube);			// Qui setto EFFETTIVAMENTE la posizione del cubo		
+	}
+
+	if (trigger_simpson_movement)
+	{
+		pos_simpson-= [0.0, 0.01, 0.0];			// Imposto la posizione dei simpson in modo che scenda verso il basso...
+		if (pos_simpson.y < -10)	
+			pos_simpson.y = -10;				// ...fino ad un minimo di -10
+												// NB: Per vettori a tre dimensioni, vett[1] e vett.y sono equivalenti (così come vett[0] e vett.x etc.)	
+		o_simpson.SetPosition(pos_simpson);
+	}
+	
+	if (trigger_ball_rotate)
+		o_ball.rotateABS(1, 0,1,0);				// ruoto l'oggetto ball di 1 grado ogni frame sull'asse Y GLOBALE
+		
+	if (trigger_ball_padre_rotate)
+		o_ball_padre.rotate(1,0,0,1);			// ruoto l'oggetto ball_padre di 1 grado ogni frame sull'asse Z LOCALE
+												// Siccome ball è attaccato a ball_padre (e posto ad un offset=5 di posizione rispetto al padre)
+												// la rotazione del padre induce anche la rotazione del figlio (ricordiamo che ball_padre
+												// è un sistema di riferimento puro senza mesh direttamente ad esso connesse)
+
+	if (trigger_cube_hide_1st)
+		m_cube.Hide(0);							// Hide / Unhide agiscono sullo STATO della visibilità, dunque sarebbe inutile farlo 
+	else										// esplicitamente ad ogni frame. Più correttamente andrebbero chiamate solo quando si 
+		m_cube.Unhide(0);						// vuole cambiare lo stato della visibilità dei subset. Qui nascondo/svelo il subset 0
+		
+	if (trigger_cube_hide_2nd)					// Qui nascondo/svelo il subset 1
+		m_cube.Hide(1);			
+	else			
+		m_cube.Unhide(1);			
+	
+	if (trigger_cube_force)
+		m_cube.ForceMaterial(mat);				// Forza la mesh ad assumere il materiale mat
+	else			
+		m_cube.ForceMaterial();					// Se non specifico il materiale "forzato", ripristina quelli di default
+	
+	if (trigger_cube_modulate_1st)
+	{
+		mod_color -= [0.00, 0.01, 0.01, 0.0];			// Imposto il colore modulante in modo che tenda sempre più verso il rosso
+		if (mod_color[1] < 0.0)	mod_color[1] = 0.0;		// E' inutile scendere sotto 0, visto che è il minimo valore per il canale
+		if (mod_color[2] < 0.0)	mod_color[2] = 0.0;		// E' inutile scendere sotto 0, visto che è il minimo valore per il canale
+		m_cube.modulatesubsetmaterial(0,mod_color);	// Modulo il materiale del subset 0 con il colore appena impostato
+	}
+	else
+	{
+		mod_color = [1,1,1,1];	
+		m_cube.modulatesubsetmaterial(0,mod_color); // Modulare con [1,1,1,1] = bianco, vuol dire ripristinare il colore originario	
+	}
+	if (trigger_teiera_mirror_x)
+	{
+		m_teiera.Mirror(0);							// Rifletto la mesh sull'asse x
+		trigger_teiera_mirror_x = false;
+	}	
+	
+	if (trigger_teiera_mirror_y)
+	{
+		m_teiera.Mirror(1);							// Rifletto la mesh sull'asse y
+		trigger_teiera_mirror_y = false;
+	}	
+	
+	if (trigger_teiera_mirror_z)
+	{
+		m_teiera.Mirror(2);							// Rifletto la mesh sull'asse z
+		trigger_teiera_mirror_z = false;
+	}
+
+	
+	SceneBegin();		
+		// DrawQuad(3);
+		
+		o_simpson.Draw();
+		var flag = 0;			
+		if (trigger_axis)
+			flag = VR_AXIS;
+		o_ball_padre.Draw(flag);
+		o_teiera.Draw();
+		o_cube.Draw();
+		
+		// Draws grid
+		DrawGrid();
+		
+	SceneEnd();
+	
+	// Stampo le istruzioni:
+	ConsoleText(0.01,0.98,"C -- muove il cubo-piano verso l'alto");
+	ConsoleText(0.01,0.96,"S -- muove il billboard Simpson verso il basso");
+	ConsoleText(0.01,0.94,"A -- mostra gli assi dei sistemi di riferimento del pallone (padre e figlio)");
+	ConsoleText(0.01,0.92,"B -- ruota il pallone attorno al suo centro sull'asse Y globale");
+	ConsoleText(0.01,0.90,"P -- ruota il pallone attorno all'origine e sull'asse Z locale al padre");
+	ConsoleText(0.01,0.88,"1 -- nasconde il primo subset (cubo) del gruppo cubo-piano");
+	ConsoleText(0.01,0.86,"2 -- nasconde il secondo subset (piano) del gruppo cubo-piano");
+	ConsoleText(0.01,0.84,"X -- riflette la teiera sull'asse x");
+	ConsoleText(0.01,0.82,"Y -- riflette la teiera sull'asse y");
+	ConsoleText(0.01,0.80,"Z -- riflette la teiera sull'asse z");
+	ConsoleText(0.01,0.78,"M -- modula il colore del cubo virandolo verso il rosso");
+	ConsoleText(0.01,0.76,"F -- forza il colore del gruppo cubo-piano al verde");
+}
+
+
+//-------------------------------------------------------------
+// Gestione di Tastiera, Mouse etc.
+//-------------------------------------------------------------
+
+function KeyboardManager()
+{
+	if (KeyStatus("C") == 1)
+		trigger_cube_movement = !trigger_cube_movement;
+	
+	if (KeyStatus("S") == 1)
+		trigger_simpson_movement = !trigger_simpson_movement;
+	
+	if (KeyStatus("B") == 1)
+		trigger_ball_rotate = !trigger_ball_rotate;
+		 
+	if (KeyStatus("P") == 1)
+		trigger_ball_padre_rotate = !trigger_ball_padre_rotate;	
+
+	if (KeyStatus("1") == 1)
+		trigger_cube_hide_1st = !trigger_cube_hide_1st;
+		
+	if (KeyStatus("2") == 1)
+		trigger_cube_hide_2nd = !trigger_cube_hide_2nd;	
+
+	if (KeyStatus("X") == 1)
+		trigger_teiera_mirror_x = !trigger_teiera_mirror_x;
+		
+	if (KeyStatus("Y") == 1)
+		trigger_teiera_mirror_y = !trigger_teiera_mirror_x;
+
+	if (KeyStatus("Z") == 1)
+		trigger_teiera_mirror_z = !trigger_teiera_mirror_z;
+
+	if (KeyStatus("M") == 1)
+		trigger_cube_modulate_1st = !trigger_cube_modulate_1st;
+	
+	if (KeyStatus("F") == 1)
+		trigger_cube_force = !trigger_cube_force;	
+
+	if (KeyStatus("A") == 1)
+		trigger_axis = !trigger_axis;
+	
+}
+
+function DownloadReady( RequestID )
+{
+	// TO DO
+}
+
+
+
+function OnTimer()
+{
+	// TO DO
+}
+
+
+
+function OnExit()
+{
+	// TO DO
+}
+
+
+function DrawQuad(size)
+{
+	glEnable(GL_LIGHTING);
+//	glDisable(GL_LIGHTING);
+
+
+	glMaterial(GL_FRONT, GL_AMBIENT,  [0.0, 0.0, 1.0, 1.0]);
+	glMaterial(GL_FRONT, GL_DIFFUSE,  [0.0, 0.0, 1.0, 1.0]);
+	glMaterial(GL_FRONT, GL_SPECULAR, [0.0, 0.0, 0.0, 1.0]);
+	glMaterial(GL_FRONT, GL_SHININESS, 127);
+	
+	glDisable(GL_TEXTURE_2D);
+//	glColor(1.0,0.0,0.0);
+	glBegin(GL_QUADS);
+	glNormal(0,0,1);
+	glVertex(-size, -size, 0);
+	glVertex( size, -size, 0);
+	glVertex( size,  size, 0);
+	glVertex(-size,  size, 0);
+	glEnd();
+	glEnable(GL_TEXTURE_2D);
+//	glEnable(GL_LIGHTING);	
+}
+
+
+function CameraMoveMouse_MBL_LC(cam, trasl_sensitivity, rot_sensitivity)
+{
+	if (cam == VOID)
+		cam = CameraGetCurrent();
+	if (trasl_sensitivity == VOID)
+		trasl_sensitivity = 0.001;
+	if (rot_sensitivity == VOID)
+		rot_sensitivity = 0.01;
+	
+		
+	/* TODO: these variables should be relative to the current camera */
+	static var InMouseR = false, InMouseL = false;				
+	static var PrecX = 0, PrecY = 0;
+
+	if (Mouse.ButtonL && !Mouse.ButtonR)
+	{
+		/* left button: camera rotation */
+		if (InMouseL)
+		{			
+			cam.RotateGlobal((Mouse.X - PrecX) * rot_sensitivity, 0, 1, 0);
+			cam.RotateLocal((Mouse.Y - PrecY) * rot_sensitivity, 1, 0, 0);		
+		}
+		else
+		{
+			PrecX = Mouse.X;
+			PrecY = Mouse.Y;
+		}
+		InMouseL = true;
+		InMouseR = false;
+	}
+	else if (Mouse.ButtonR)
+	{
+		/* right button: camera translation */
+		if (InMouseR)
+		{
+			if (Mouse.ButtonL)
+			{
+				var y_trasl = -cam.GetYAxis() * (Mouse.Y - PrecY); 
+				cam.SetPosition(cam.GetPosition() + y_trasl * trasl_sensitivity);
+			}
+			else
+			{
+				var x_trasl = cam.GetXAxis() * (Mouse.X - PrecX);
+				var z_trasl = cam.GetZAxis() * (Mouse.Y - PrecY);
+				cam.SetPosition(cam.GetPosition() + (z_trasl + x_trasl) * trasl_sensitivity);
+			}
+		}
+		else
+		{
+			PrecX = Mouse.X;
+			PrecY = Mouse.Y;
+		}
+		InMouseR = true;
+		InMouseL = false;
+	}	
+	else
+	{
+		InMouseR = false;
+		InMouseL = false;
+	}
+}
+
+function CameraMoveMouse()
+//----------------------------------------------------------------------
+{
+	CameraMoveMouse_MBL_LC();
+}
+
+/*
+// Camera manager (using mouse)
+function CameraMoveMouse()
+{
+	static var InMouseR = false, InMouseL = false;				
+	static var PrecX = 0, PrecY = 0;			
+	// Change these values to modify the mouse sensitivity
+	var TR_SENSITIVITY  = 0.001;
+	var ROT_SENSITIVITY = 0.01;
+	// Mouse manager
+	if(Mouse.ButtonL && !Mouse.ButtonR)
+	{
+		//====  Left Button: Camera rotation  ====//
+		if (InMouseL)
+		{			
+			CameraRotate(( Mouse.X-PrecX)*ROT_SENSITIVITY,0,1,0);
+			CameraRotateABS((Mouse.Y-PrecY)*ROT_SENSITIVITY,1,0,0);		
+		}
+		else
+		{
+			PrecX = Mouse.X;
+			PrecY = Mouse.Y;
+		}
+		InMouseL = true;
+		InMouseR = false;
+	}
+	else
+	if(Mouse.ButtonR)
+	{
+		//====  Right Button: Camera translation  ====//
+		if (InMouseR)
+		{
+			var CameraMatrix = Camera.GetMatrix();
+			var CameraPos = Camera.GetPosition();
+			if (!Mouse.ButtonL)
+			//====  Translation on X and Z axis ====//
+				CameraPos += Camera.GetZAxis() * (Mouse.y-PrecY)*TR_SENSITIVITY + Camera.GetXAxis() * (Mouse.X- PrecX)*TR_SENSITIVITY;
+			else
+			//====  Right + Left Button: Translation on Y axis ====//
+				CameraPos -= Camera.GetYAxis() * (Mouse.y-PrecY)*TR_SENSITIVITY;
+			Camera.SetPosition(CameraPos);		
+		}
+		else
+		{
+			PrecX = Mouse.X;
+			PrecY = Mouse.Y;
+		}
+		InMouseR = true;
+		InMouseL = false;
+	}	
+	else
+	{
+		InMouseR = false;
+		InMouseL = false;
+	}
+
+}
+*/
+
+// Draws a grid
+function DrawGrid()
+{
+	var i;
+	glLineWidth(1);
+	
+	glDisable(GL_LIGHTING);
+	glDisable(GL_TEXTURE_2D);
+	glColor(0.5,0.5,0.5);
+	
+	glBegin(GL_LINES);
+	for( i= -100; i<=100; i+=10 )
+	{
+		glVertex(i, 0,  100 );
+		glVertex(i, 0, -100 );
+		
+		glVertex( 100, 0, i );
+		glVertex(-100, 0, i );
+	}
+	glEnd();
+	glEnable(GL_LIGHTING);
+	glEnable(GL_TEXTURE_2D);
+}
+
+
+
+
+//----------------------------------------------------------------------
+function KeyStatus(keycode)
+//----------------------------------------------------------------------
+{
+	if (valtype(keycode) == "S")
+	{
+		keycode = asc(keycode);
+	}
+		
+	static var keys_stati = vector(255);
+	if (KeyPressed(keycode))
+	{	
+		if (keys_stati[keycode] == 0.0)
+		{
+			keys_stati[keycode] = 1.0;
+			return 1;
+		}
+	}
+	else
+	{
+		keys_stati[keycode] = 0.0;
+		return 0;
+	}
+	return -1;		
+}
