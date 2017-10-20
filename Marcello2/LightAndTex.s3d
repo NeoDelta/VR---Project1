@@ -17,7 +17,7 @@ SET SCENE_FAR = 1000;
 //for selection
 //outline shader
 var shader;
-var viewShader;
+var crossShader;
 //crosshairs texture
 var texCrosshairs;
 var crosshairsQuad;
@@ -89,8 +89,9 @@ function Saturate();
 //for selection
 function DrawOutlined(obj);
 function DrawCrosshairs();
-function OnlyDrawQuad(center,size,dist);
+function OnlyDrawQuad(center,size,rightV,upV);
 function maximum(a,b);
+function SMult(s,v);
 
 //----------------------------------------------------------------------
 function OnDownload()
@@ -121,7 +122,7 @@ function GetSelectedObjects()
 		}
 
 	}
-	OutputLN(selectedObject);
+	//OutputLN(selectedObject);
 	
 }
 
@@ -136,7 +137,7 @@ function OnInit(params)
     glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
     glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
 	shader = CVmShaderProgram("outline.sh");
-	viewShader = CVmShaderProgram("viewCoords.sh");
+	crossShader = CVmShaderProgram("crosshairs.sh");
 	
 	ConsoleFont("Lucida console",11);
 	// Camera
@@ -260,11 +261,6 @@ function maximum(a,b){
 }
 
 function DrawCrosshairs(){
-	/*
-	zaxis = normal(At - Eye);
-	xaxis = normal(cross(Up, zaxis));
-	yaxis = cross(zaxis, xaxis);
-	*/	
 	
 	
 	
@@ -281,19 +277,33 @@ function DrawCrosshairs(){
 	
 	
 	
-	var dist = 50;
+	var dist = 100;
+	var pos;
+	pos = CameraGetPosition();
 	if(selectedObject !=Void){
+		
+		
 		var bbox = selectedObject.GetMesh().GetBoundingBox();
 		var s = selectedObject.GetScale();
 		var p1 = [bbox[0]*s[0],bbox[1]*s[1],bbox[2]*s[2]];
 		var p2 = [bbox[3]*s[0],bbox[4]*s[1],bbox[5]*s[2]];
 		var r = maximum(modulus(p1),modulus(p2));
 		dist = modulus(CameraGetPosition()-selectedObject.GetPosition())-r;
-		OutputLN(dist);
+		pos += Norm(selectedObject.GetPosition()-CameraGetPosition())*dist;
+		
 	}
-	viewShader.Start();
-	OnlyDrawQuad([0.0,0.0],1,dist);
-	viewShader.Stop();
+	
+	pos += Norm(-CameraGetZAxis())*dist;
+	
+	crossShader.Start();
+	if(selectedObject !=Void){
+		crossShader.SetParameter("alpha", 1.0);
+	}
+	else{
+		crossShader.SetParameter("alpha", 0.3);
+	}
+	OnlyDrawQuad(pos,1,CameraGetXAxis(),CameraGetYAxis());
+	crossShader.Stop();
 	glEnable(GL_STENCIL_TEST);
 	glEnable(GL_DEPTH_TEST);
 	
@@ -301,7 +311,11 @@ function DrawCrosshairs(){
 }
 
 
-function OnlyDrawQuad(center,size,dist){
+function SMult(s,v){
+	return [s*v[0],s*v[1],s*v[2]];
+}
+
+function OnlyDrawQuad(center,size,rightV,upV){
 	glBegin(GL_QUADS);
 		// Specifico la normale (necessario perchè il lighting funzioni correttamente)
 		glNormal(0,0,1);
@@ -309,13 +323,13 @@ function OnlyDrawQuad(center,size,dist){
 		// Rispetto a OpenGL standard, dunque, le V coordinates vanno invertite:
 
 		glTexCoord(0,1);				// Vertice in basso a sinistra: in OpenGL standard sarebbbe glTexCoord(0,0)			
-		glVertex(center[0]-size, center[1]-size, -dist);	
+		glVertex(center-size*rightV-size*upV);	
 		glTexCoord(1,1);				// Vertice in basso a destra: in OpenGL standard sarebbbe glTexCoord(0,1)
-		glVertex(center[0]+size, center[1]-size, -dist);
+		glVertex(center+size*rightV-size*upV);
 		glTexCoord(1,0);				// Vertice in alto a destra: in OpenGL standard sarebbbe glTexCoord(1,1)
-		glVertex(center[0]+size,  center[1]+size, -dist);		
+		glVertex(center+size*rightV+size*upV);		
 		glTexCoord(0,0);				// Vertice in alto a sinistra: in OpenGL standard sarebbbe glTexCoord(1,0)
-		glVertex(center[0]-size,  center[1]+size, -dist);		
+		glVertex(center-size*rightV+size*upV);		
 	glEnd();
 	
 }
