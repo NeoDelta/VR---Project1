@@ -14,8 +14,20 @@ SET SCENE_FAR = 1000;
 
 // Global variables
 
+//for selection
+//outline shader
+var shader;
+var viewShader;
+//crosshairs texture
+var texCrosshairs;
+var crosshairsQuad;
+var selectedObject;
+var collisionPoint;
+
+
+
 // Camera globals
-var CamPos = [0.0,5.0,30.0];  	// camera position
+var CamPos = [0.0,0.0,30.0];  	// camera position
 
 // Light globals
 var Luce;
@@ -26,6 +38,12 @@ var ang_oriz = 0.0;
 var m_luce, o_luce;
 var m_sfera;
 var mat;
+
+
+var o_cube;				// mesh e obj per il cubo appoggiato sul piano					
+var pos_cube    = [2.0,0.0,0.0];	// posizione iniziale della palla
+var size_cube = [10.0,10.0,10.0];
+
 
 var ambient_color  = [0.5, 0.5, 0.5, 1.0];
 var diffuse_color  = [0.5, 0.5, 0.5, 1.0];
@@ -39,6 +57,7 @@ var specular_light = [0.5, 0.5, 0.5];
 var light_enabled;
 var texture_enabled;
 var wireframe_enabled;
+var objects;
 
 var segs = 1;
 
@@ -58,6 +77,7 @@ var active_component = AMB;
 var active_object = QUAD;
 var texSimpson;
 
+
 function KeyStatus(keycode);
 function KeyBoardManager();
 function CameraMoveMouse();
@@ -65,6 +85,12 @@ function DrawGrid();
 function DrawQuad(size, tc);
 function DrawTextLayer();
 function Saturate();
+
+//for selection
+function DrawOutlined(obj);
+function DrawCrosshairs();
+function OnlyDrawQuad(center,size,dist);
+function maximum(a,b);
 
 //----------------------------------------------------------------------
 function OnDownload()
@@ -74,14 +100,48 @@ function OnDownload()
 	FileDownload("Data.zip");	// Download di un unico archivio contenente le mesh e le texture
 }
 
+function GetSelectedObjects()
+{
+	selectedObject = VOID;
+	var cam = CameraGetCurrent();
+	var camPoint = cam.GetPosition();
+	var forward = cam.GetDirection();
+	var horizonPoint = camPoint+forward*100;
+	
+	var minDistance = 100;
+	for(var i = 0; i < len(objects); ++i){
+		var obj = objects[i];
+		var isSelected = obj.isColliding(camPoint,horizonPoint,collisionPoint);
+		if(isSelected){
+			var dist = modulus(obj.GetPosition-camPoint);
+			if(selectedObject==VOID || modulus(obj.GetPosition-camPoint)<minDistance){
+				minDistance = dist;
+				selectedObject = obj;
+			}
+		}
+
+	}
+	OutputLN(selectedObject);
+	
+}
+
+
 //----------------------------------------------------------------------
 function OnInit(params)
 //----------------------------------------------------------------------
 {
+	glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glEnable(GL_STENCIL_TEST);
+    glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+	shader = CVmShaderProgram("outline.sh");
+	viewShader = CVmShaderProgram("viewCoords.sh");
+	
 	ConsoleFont("Lucida console",11);
 	// Camera
 	CameraSetPosition(CamPos);
-	ShowCursor(false);
+	//ShowCursor(false);
 
 	// Creazione luce e settaggio parametri (componenti colore e posizione)
 	Luce = CVmLight();
@@ -101,6 +161,12 @@ function OnInit(params)
 	m_sfera = CVmNewMesh(VRP_SPHERE,30,10);
 	m_sfera.Normalize(10);
 	
+	o_cube = CVmObj(CVMNewMesh("cubi.aam"));
+	//o_cube = CVmObj(m_cube);
+	o_cube.SetPosition(pos_cube);
+	o_cube.SetScale(size_cube);
+	
+	
 	// Caricamento della texture
 	texSimpson = CVmTexture("simpson.jpg");
 	
@@ -114,7 +180,16 @@ function OnInit(params)
 	
 	mat = CVmMaterial();
 	
+	//selectable object array
+	objects = {o_cube,o_luce};
+	
+	
+	//crosshairs texture
+	texCrosshairs = CVmTexture("crosshairs.png");
+	
 	SetFrameRate(60);
+	
+	
 }
 
 
@@ -122,28 +197,134 @@ function OnInit(params)
 function OnFrame()
 //----------------------------------------------------------------------
 {
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+	shader.Activate(true);
+	GetSelectedObjects();
 	KeyboardManager();						// Gestisco le pressioni dei tasti
 	//SetXVRWindowFullScreen(true);
 	// Camera manager
 	CameraMoveMouse();						// Gestisco il movimento della camera con il mouse
-	ShowCursor(false);
 	
-	SceneBegin();			
+	SceneBegin();	
+		glStencilMask(0x00);
 		DrawGrid();							// Disegna la griglia
-		DrawQuad(3, 1);						// Disegna il quadrilatero con gli attributi immessi da tastiera in tempo reale	
+		//DrawQuad(3, 1);						// Disegna il quadrilatero con gli attributi immessi da tastiera in tempo reale	
 		glColor(diffuse_light);				// Imposta il colore della sfera rappresentante la luce (è = al colore della componente diffuse della luce)
 		o_luce.Draw(VR_NO_SHADING);		// Disegna la sfera rappresentante la luce
 			// Nota: il flag VR_NO_SHADING disabilita il lighting SOLO per questo oggetto..
 			// Il colore usato per questo oggetto è allora quello relativo all'ultimo GLColor effettuato.
 			// E' necessario disabilitare lo shading perchè la sfera è disegnata esattamente nella posizione della luce.
 			// la luce (puntiforme) sarebbe cioè contenuta dentro la sfera e dunque risulterebbe invisibile all'esterno in assenza
-			// di altre sorgenti di luce.								
+			// di altre sorgenti di luce.	
+			
+		if(selectedObject !=Void && selectedObject==o_cube){
+			DrawOutlined(o_cube);
+		}
+		else{
+			o_cube.Draw();
+		}
+		DrawCrosshairs();
+		
+		//
+		//
+									
 	SceneEnd();
 	
 	// Scrive le istruzioni a schermo
 	DrawTextLayer();
 	
 }
+
+
+function DrawOutlined(obj){
+	glStencilFunc(GL_ALWAYS, 1, 0xFF);
+    glStencilMask(0xFF);
+	//	
+	o_cube.SetScale(size_cube);
+	obj.Draw();
+	//o_cube.DrawBoundingBox();
+		glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
+        glStencilMask(0x00);
+        glDisable(GL_DEPTH_TEST);
+        shader.Start();	
+        obj.SetScale(size_cube+[0.5,0.5,0.5]);
+        obj.Draw();
+        shader.Stop();
+        glStencilMask(0xFF);
+        glEnable(GL_DEPTH_TEST);
+}
+
+function maximum(a,b){
+	if(a > b) return a;
+	return b;
+}
+
+function DrawCrosshairs(){
+	/*
+	zaxis = normal(At - Eye);
+	xaxis = normal(cross(Up, zaxis));
+	yaxis = cross(zaxis, xaxis);
+	*/	
+	
+	
+	
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_STENCIL_TEST);
+	glStencilMask(0xFF);
+	glEnable(GL_TEXTURE_2D);
+	SetActiveTexture(texCrosshairs,VR_NO_FILTER,0);	
+	//mat.SetTexture(texSimpson);
+	//m_sfera.ForceMaterial(mat);
+	glDisable(GL_LIGHTING);
+	
+	
+	
+	
+	
+	var dist = 50;
+	if(selectedObject !=Void){
+		var bbox = selectedObject.GetMesh().GetBoundingBox();
+		var s = selectedObject.GetScale();
+		var p1 = [bbox[0]*s[0],bbox[1]*s[1],bbox[2]*s[2]];
+		var p2 = [bbox[3]*s[0],bbox[4]*s[1],bbox[5]*s[2]];
+		var r = maximum(modulus(p1),modulus(p2));
+		dist = modulus(CameraGetPosition()-selectedObject.GetPosition())-r;
+		OutputLN(dist);
+	}
+	viewShader.Start();
+	OnlyDrawQuad([0.0,0.0],1,dist);
+	viewShader.Stop();
+	glEnable(GL_STENCIL_TEST);
+	glEnable(GL_DEPTH_TEST);
+	
+	
+}
+
+
+function OnlyDrawQuad(center,size,dist){
+	glBegin(GL_QUADS);
+		// Specifico la normale (necessario perchè il lighting funzioni correttamente)
+		glNormal(0,0,1);
+		// ATTENZIONE! Per motivi "storici" XVR carica le texture invertite sull'asse V (quello verticale)
+		// Rispetto a OpenGL standard, dunque, le V coordinates vanno invertite:
+
+		glTexCoord(0,1);				// Vertice in basso a sinistra: in OpenGL standard sarebbbe glTexCoord(0,0)			
+		glVertex(center[0]-size, center[1]-size, -dist);	
+		glTexCoord(1,1);				// Vertice in basso a destra: in OpenGL standard sarebbbe glTexCoord(0,1)
+		glVertex(center[0]+size, center[1]-size, -dist);
+		glTexCoord(1,0);				// Vertice in alto a destra: in OpenGL standard sarebbbe glTexCoord(1,1)
+		glVertex(center[0]+size,  center[1]+size, -dist);		
+		glTexCoord(0,0);				// Vertice in alto a sinistra: in OpenGL standard sarebbbe glTexCoord(1,0)
+		glVertex(center[0]-size,  center[1]+size, -dist);		
+	glEnd();
+	
+}
+		
+
+
+
+
+
 
 
 //-------------------------------------------------------------
@@ -175,6 +356,8 @@ function OnExit()
 function DrawQuad(size, tc)
 //----------------------------------------------------------------------
 {
+	
+	
 	// Salva lo stato corrente di lighting e texturing per ripristinarlo a fine tracciamento del quadrilatero
 	var light_status = glGet(GL_LIGHTING);
 	var texture_status = glGet(GL_TEXTURE_2D);
@@ -434,20 +617,15 @@ function CameraMoveMouse()
 //----------------------------------------------------------------------
 {
 	static var InMouseR = false, InMouseL = false;				
-	static var PrecX = GetScreenResolution().x/2, PrecY = GetScreenResolution().y;			
+	static var PrecX =0, PrecY =0;			
 	// Change these values to modify the mouse sensitivity
 	var TR_SENSITIVITY  = 0.001;
-	var ROT_SENSITIVITY = 0.01;
+	var ROT_SENSITIVITY = 0.1;
 	
-	// Mouse manager
-	CameraRotate(( Mouse.X-PrecX)*ROT_SENSITIVITY,0,1,0);
-	CameraRotateABS((Mouse.Y-PrecY)*ROT_SENSITIVITY,1,0,0);
-	Mouse.SetStatus(GetScreenResolution().x/2,GetScreenResolution().y/2);
+	
 	//Mouse.X = 0;
 	//Mouse.Y = 0;
 	//SetCursorPos(0.5, 0.5);
-	PrecX = Mouse.X;
-	PrecY = Mouse.Y;
 	if(Mouse.ButtonL && !Mouse.ButtonR)
 	{
 		//====  Left Button: Camera rotation  ====//
