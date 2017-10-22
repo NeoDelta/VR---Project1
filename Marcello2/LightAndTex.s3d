@@ -24,6 +24,16 @@ var crosshairsQuad;
 var selectedObject;
 var collisionPoint;
 
+//for teleportation
+var showTeleport;
+var texFloor;
+
+var o_wall;				// mesh e obj per il cubo appoggiato sul piano					
+var pos_wall    = [0.0,-5.0,0.0];	// posizione iniziale della palla
+var size_wall = [10.0,1.0,10.0];
+
+
+
 var precMouseW = Mouse.Wheel;
 var translateDistance = 0;
 
@@ -61,6 +71,7 @@ var wireframe_enabled;
 var objects;
 
 var segs = 1;
+var teleportPos;
 
 #define AMB 	0
 #define DIF 	1
@@ -79,6 +90,7 @@ var active_object = QUAD;
 var texSimpson;
 
 
+
 function KeyStatus(keycode);
 function KeyBoardManager();
 function CameraMoveMouse();
@@ -86,6 +98,10 @@ function DrawGrid();
 function DrawQuad(size, tc);
 function DrawTextLayer();
 function Saturate();
+function DrawFloor();
+function DrawTeleport();
+function GetCollisionPoint(p,v);
+
 
 //for selection
 function DrawOutlined(obj);
@@ -172,8 +188,16 @@ function OnInit(params)
 	o_cube.SetScale(size_cube);
 	
 	
+	o_wall = CVmObj(CVMNewMesh("wall.aam"));
+	//o_cube = CVmObj(m_cube);
+	o_wall.SetPosition(pos_wall);
+	o_wall.SetScale(size_wall);
+	
+	
+	
 	// Caricamento della texture
 	texSimpson = CVmTexture("simpson.jpg");
+	texFloor = CVmTexture("grass.jpg");
 	
 	// Inizializzazione flag abilitazione lighting e texturing (si legge cosa è abilitato al momento)	
 	light_enabled = glGet(GL_LIGHTING);
@@ -212,7 +236,7 @@ function OnFrame()
 	
 	SceneBegin();	
 		glStencilMask(0x00);
-		DrawGrid();							// Disegna la griglia
+		//DrawGrid();							// Disegna la griglia
 		//DrawQuad(3, 1);						// Disegna il quadrilatero con gli attributi immessi da tastiera in tempo reale	
 		glColor(diffuse_light);				// Imposta il colore della sfera rappresentante la luce (è = al colore della componente diffuse della luce)
 		o_luce.Draw(VR_NO_SHADING);		// Disegna la sfera rappresentante la luce
@@ -221,14 +245,27 @@ function OnFrame()
 			// E' necessario disabilitare lo shading perchè la sfera è disegnata esattamente nella posizione della luce.
 			// la luce (puntiforme) sarebbe cioè contenuta dentro la sfera e dunque risulterebbe invisibile all'esterno in assenza
 			// di altre sorgenti di luce.	
-			
+		glStencilMask(0x00);
+		//DrawFloor();
+		glEnable(GL_TEXTURE_2D);
+		mat.SetTexture(texFloor);
+		mat.ChangeTextureParams(VR_U_TILING,10);
+		mat.ChangeTextureParams(VR_V_TILING,10);
+		o_wall.GetMesh().ForceMaterial(mat);
+		
+		o_wall.Draw();
 		//DrawOutlined(selectedObject);
 		for(var i = 0; i < len(objects); ++i){
 			if(objects[i] != selectedObject) objects[i].Draw();
 			else DrawOutlined(selectedObject);
+		} 
+		if(showTeleport){
+			DrawTeleport();
+		}
+		else{
+			DrawCrosshairs();
 		}
 		
-		DrawCrosshairs();
 		//
 		//
 									
@@ -237,6 +274,36 @@ function OnFrame()
 	// Scrive le istruzioni a schermo
 	DrawTextLayer();
 	
+}
+
+
+function GetCollisionPoint(p,v){
+	var d = -(pos_wall.y);
+	//t = - (d + D3DXVec3Dot(&vNormal, &pStart)) 
+    //    / D3DXVec3Dot(&vNormal, &ray);
+	var t = -(d+p.y)/(v.y);
+	return p+v*t;
+}
+
+function DrawTeleport(){
+	var cam = CameraGetCurrent();
+	var camPoint = cam.GetPosition();
+	var forward = cam.GetDirection();
+	forward = Norm(forward);
+	var horizonPoint = camPoint+forward*100;
+	
+	var isSelected = o_wall.isColliding(camPoint,horizonPoint);
+	
+	if(isSelected){
+		teleportPos = GetCollisionPoint(camPoint,forward);
+		glDisable(GL_DEPTH_TEST);
+		glDisable(GL_STENCIL_TEST);
+		glStencilMask(0xFF);
+		glEnable(GL_TEXTURE_2D);
+		SetActiveTexture(texCrosshairs,VR_NO_FILTER,0);	
+		
+		OnlyDrawQuad(teleportPos+[0,1,0],10,[1,0,0],[0,0,-1]);
+	}
 }
 
 
@@ -334,6 +401,33 @@ function OnlyDrawQuad(center,size,rightV,upV){
 		glTexCoord(0,0);				// Vertice in alto a sinistra: in OpenGL standard sarebbbe glTexCoord(1,0)
 		glVertex(center-size*rightV+size*upV);		
 	glEnd();
+	
+}
+
+function DrawFloor(){
+	glEnable(GL_LIGHTING);
+	glEnable(GL_TEXTURE_2D);
+	SetActiveTexture(texFloor,VR_NO_FILTER,0);	
+	glPolygonMode(GL_FRONT,GL_FILL);
+	
+	glBegin(GL_QUADS);
+		// Specifico la normale (necessario perchè il lighting funzioni correttamente)
+		glNormal(0,1,0);
+		// ATTENZIONE! Per motivi "storici" XVR carica le texture invertite sull'asse V (quello verticale)
+		// Rispetto a OpenGL standard, dunque, le V coordinates vanno invertite:
+
+		glTexCoord(0,10);				// Vertice in basso a sinistra: in OpenGL standard sarebbbe glTexCoord(0,0)			
+		glVertex([-100,0,100]);	
+		glTexCoord(10,10);				// Vertice in basso a destra: in OpenGL standard sarebbbe glTexCoord(0,1)
+		glVertex([100,0,100]);
+		glTexCoord(10,0);				// Vertice in alto a destra: in OpenGL standard sarebbbe glTexCoord(1,1)
+		glVertex([100,0,-100]);		
+		glTexCoord(0,0);				// Vertice in alto a sinistra: in OpenGL standard sarebbbe glTexCoord(1,0)
+		glVertex([-100,0,-100]);		
+	glEnd();
+	
+	glDisable(GL_TEXTURE_2D);
+	glDisable(GL_LIGHTING);
 	
 }
 		
@@ -444,20 +538,20 @@ function DrawQuad(size, tc)
 		// Comincia il tracciamento del quadrilatero		
 		glBegin(GL_QUADS);
 			// Specifico la normale (necessario perchè il lighting funzioni correttamente)
-			glNormal(0,0,1);
+			glNormal(0,1,0);
 			// ATTENZIONE! Per motivi "storici" XVR carica le texture invertite sull'asse V (quello verticale)
 			// Rispetto a OpenGL standard, dunque, le V coordinates vanno invertite:
 			for (i=0;i<segs;i++)
 				for (j=0;j<segs;j++)
 				{
 					glTexCoord(0,1);				// Vertice in basso a sinistra: in OpenGL standard sarebbbe glTexCoord(0,0)			
-					glVertex(-size+i*delta, -size+j*delta, 0);	
+					glVertex(-size+i*delta, -10, -size+j*delta);	
 					glTexCoord(1,1);				// Vertice in basso a destra: in OpenGL standard sarebbbe glTexCoord(0,1)
-					glVertex(-size+(i+1)*delta, -size+j*delta, 0);
+					glVertex(-size+(i+1)*delta, -10, -size+j*delta);
 					glTexCoord(1,0);				// Vertice in alto a destra: in OpenGL standard sarebbbe glTexCoord(1,1)
-					glVertex(-size+(i+1)*delta,  -size+(j+1)*delta, 0);		
+					glVertex(-size+(i+1)*delta, -10, -size+(j-1)*delta);		
 					glTexCoord(0,0);				// Vertice in alto a sinistra: in OpenGL standard sarebbbe glTexCoord(1,0)
-					glVertex(-size+i*delta,  -size+(j+1)*delta, 0);		
+					glVertex(-size+i*delta, -10, -size+(j-1)*delta);		
 				}
 		glEnd();
 	}
@@ -594,6 +688,23 @@ function KeyboardManager()
 		selectedObject.Rotate(1, 0, 1, 0);
 	if (KeyPressed("E")  && selectedObject!=VOID)
 		selectedObject.Rotate(-1, 0, 1, 0);	
+		
+		
+		
+	//show ray
+	if (KeyPressed("M")){
+		showTeleport = true;
+		if(KeyPressed("9")){
+			OutputLN("nine");
+			CameraPos = teleportPos;
+			CameraSetPosition(CameraPos);
+			
+		}
+		
+	}
+	else showTeleport = false;
+	
+	
 		
 	// Settaggio subcomponenti della componente attiva: incremento delle componenti
 	switch (active_component)
