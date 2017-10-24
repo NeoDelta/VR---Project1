@@ -24,6 +24,7 @@ var crosshairsQuad;
 var selectedObject;
 var collisionPoint;
 
+
 //for teleportation
 var showTeleport;
 var texFloor;
@@ -33,6 +34,7 @@ var pos_wall    = [0.0,-5.0,0.0];	// posizione iniziale della palla
 var size_wall = [10.0,1.0,10.0];
 
 
+var mousePos;
 
 var precMouseW = Mouse.Wheel;
 var translateDistance = 0;
@@ -50,8 +52,12 @@ var m_luce, o_luce;
 var m_sfera;
 var mat;
 
+var sizeX = 640;
+var sizeY = 480;
 
-var o_cube;				// mesh e obj per il cubo appoggiato sul piano					
+
+var o_cube;				// mesh e obj per il cubo appoggiato sul piano	
+var cube2;								
 var pos_cube    = [2.0,0.0,0.0];	// posizione iniziale della palla
 var size_cube = [10.0,10.0,10.0];
 
@@ -105,10 +111,13 @@ function GetCollisionPoint(p,v);
 
 //for selection
 function DrawOutlined(obj);
-function DrawCrosshairs();
+function DrawCrosshairs(mouseVec);
 function OnlyDrawQuad(center,size,rightV,upV);
 function maximum(a,b);
-function SMult(s,v);
+function MouseToWorld(x, y);
+function MouseVector();
+function GetSelectedObjects(forward);
+
 
 //----------------------------------------------------------------------
 function OnDownload()
@@ -118,12 +127,12 @@ function OnDownload()
 	FileDownload("Data.zip");	// Download di un unico archivio contenente le mesh e le texture
 }
 
-function GetSelectedObjects()
+function GetSelectedObjects(forward)
 {
 	selectedObject = VOID;
 	var cam = CameraGetCurrent();
 	var camPoint = cam.GetPosition();
-	var forward = cam.GetDirection();
+	//var forward = mouseVec;
 	var horizonPoint = camPoint+forward*100;
 	
 	var minDistance = 100;
@@ -141,7 +150,6 @@ function GetSelectedObjects()
 
 	}
 	if(selectedObject!=VOID) selectedObject = VOID;
-	//OutputLN(selectedObject);
 	
 }
 
@@ -187,6 +195,11 @@ function OnInit(params)
 	o_cube.SetPosition(pos_cube);
 	o_cube.SetScale(size_cube);
 	
+	cube2 = CVmObj(CVMNewMesh("cubi.aam"));
+	//o_cube = CVmObj(m_cube);
+	cube2.SetPosition(pos_cube);
+	cube2.SetScale(size_cube);
+	
 	
 	o_wall = CVmObj(CVMNewMesh("wall.aam"));
 	//o_cube = CVmObj(m_cube);
@@ -218,6 +231,7 @@ function OnInit(params)
 	
 	SetFrameRate(60);
 	
+
 	
 }
 
@@ -227,8 +241,9 @@ function OnFrame()
 //----------------------------------------------------------------------
 {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+	var mouseVec = MouseVector();
 	shader.Activate(true);
-	GetSelectedObjects();
+	GetSelectedObjects(mouseVec);
 	KeyboardManager();						// Gestisco le pressioni dei tasti
 	//SetXVRWindowFullScreen(true);
 	// Camera manager
@@ -263,12 +278,8 @@ function OnFrame()
 			DrawTeleport();
 		}
 		else{
-			DrawCrosshairs();
+			DrawCrosshairs(mouseVec);
 		}
-		
-		//
-		//
-									
 	SceneEnd();
 	
 	// Scrive le istruzioni a schermo
@@ -283,6 +294,40 @@ function GetCollisionPoint(p,v){
     //    / D3DXVec3Dot(&vNormal, &ray);
 	var t = -(d+p.y)/(v.y);
 	return p+v*t;
+}
+
+function MouseToWorld(x, y){
+	var cam = CameraGetCurrent();
+	
+	var f = 1/tan( (cam.GetFovY()/2.0)*GRAD_TO_RAD  );
+	var aspect = 480.0/640.0;
+	var zFar = cam.GetZFar();
+	var zNear = cam.GetZNear();
+	var projMatrix =[f/aspect,           0,            0,                         0,            
+					0,                  f,            0,                         0,
+					0,                  0,            (zFar + zNear)/(zNear - zFar), (2 * zFar * zNear)/(zNear - zFar),
+					0,                  0,            -1,                        0];
+	
+	projMatrix = MatrixTranspose_4(projMatrix);
+	projMatrix = MatrixInverse_4(projMatrix);
+	var viewMatrix = cam.GetMatrix();
+	var mvp = MatrixMultiplyMatrix_4(projMatrix,viewMatrix);
+	var invmvp = MatrixInverse_4( mvp );
+	var unp = MatrixMultiplyVector_4(invmvp,[2*x/640.0-1,-(2*y/480.0-1),3.14159,1.0]);
+ 	var p = [unp[0],unp[1],unp[2]]/unp[3];
+ 	mousePos = p;
+ 	return p;
+}
+
+function MouseVector(){
+	var pos = MouseToWorld(Mouse.X,Mouse.Y);
+	var cam = CameraGetCurrent();
+	var p0 = cam.GetPosition();
+	var vec = pos-p0;
+	vec = Norm(vec);
+	vec = -vec;
+	//vec[2] = -vec[2];
+	return vec;
 }
 
 function DrawTeleport(){
@@ -330,7 +375,7 @@ function maximum(a,b){
 	return b;
 }
 
-function DrawCrosshairs(){
+function DrawCrosshairs(mouseVec){
 	
 	
 	
@@ -347,7 +392,7 @@ function DrawCrosshairs(){
 	
 	
 	
-	var dist = 100;
+	var dist = 50;
 	var pos;
 	pos = CameraGetPosition();
 	if(selectedObject !=Void){
@@ -359,11 +404,11 @@ function DrawCrosshairs(){
 		var p2 = [bbox[3]*s[0],bbox[4]*s[1],bbox[5]*s[2]];
 		var r = maximum(modulus(p1),modulus(p2));
 		dist = modulus(CameraGetPosition()-selectedObject.GetPosition())-r;
-		pos += Norm(selectedObject.GetPosition()-CameraGetPosition())*dist;
+		pos += /*Norm(selectedObject.GetPosition()-CameraGetPosition())*/mouseVec*dist;
 		
 	}
 	
-	pos += Norm(-CameraGetZAxis())*dist;
+	pos += mouseVec*dist;
 	
 	crossShader.Start();
 	if(selectedObject !=Void){
@@ -378,11 +423,6 @@ function DrawCrosshairs(){
 	glEnable(GL_DEPTH_TEST);
 	
 	
-}
-
-
-function SMult(s,v){
-	return [s*v[0],s*v[1],s*v[2]];
 }
 
 function OnlyDrawQuad(center,size,rightV,upV){
@@ -690,16 +730,21 @@ function KeyboardManager()
 		selectedObject.Rotate(-1, 0, 1, 0);	
 		
 		
-		
 	//show ray
 	if (KeyPressed("M")){
+		showTeleport = false;
+				
+	}
+	if(KeyPressed("N")){
 		showTeleport = true;
-		if(KeyPressed("9")){
-			OutputLN("nine");
+	}
+	
+	if(KeyPressed(VK_RETURN)){
+		if(showTeleport){
 			CameraPos = teleportPos;
 			CameraSetPosition(CameraPos);
-			
 		}
+		
 		
 	}
 	else showTeleport = false;
@@ -783,6 +828,7 @@ function CameraMoveMouse()
 	{
 		InMouseL = false;
 	}
+	
 
 }
 
@@ -845,6 +891,7 @@ function KeyStatus(keycode)
 function DrawTextLayer()
 //----------------------------------------------------------------------
 {
+
 	var testo="";
 	var testo2="";
 	var testo3="";
