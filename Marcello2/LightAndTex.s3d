@@ -738,7 +738,8 @@ function KeyboardManager()
 	}
 	
 	
-	if(KeyPressed(VK_RETURN)){
+	//if(KeyPressed(VK_RETURN)){
+	if(Mouse.ButtonR){
 		if(showTeleport){
 			CameraPos = teleportPos;
 			CameraSetPosition(CameraPos);
