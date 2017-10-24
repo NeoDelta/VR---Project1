@@ -26,7 +26,7 @@ var collisionPoint;
 
 
 //for teleportation
-var showTeleport;
+var showTeleport = false;
 var texFloor;
 
 var o_wall;				// mesh e obj per il cubo appoggiato sul piano					
@@ -105,7 +105,7 @@ function DrawQuad(size, tc);
 function DrawTextLayer();
 function Saturate();
 function DrawFloor();
-function DrawTeleport();
+function DrawTeleport(mouseVec);
 function GetCollisionPoint(p,v);
 
 
@@ -271,11 +271,11 @@ function OnFrame()
 		o_wall.Draw();
 		//DrawOutlined(selectedObject);
 		for(var i = 0; i < len(objects); ++i){
-			if(objects[i] != selectedObject) objects[i].Draw();
+			if(objects[i] != selectedObject || showTeleport) objects[i].Draw();
 			else DrawOutlined(selectedObject);
 		} 
 		if(showTeleport){
-			DrawTeleport();
+			DrawTeleport(mouseVec);
 		}
 		else{
 			DrawCrosshairs(mouseVec);
@@ -330,10 +330,11 @@ function MouseVector(){
 	return vec;
 }
 
-function DrawTeleport(){
+function DrawTeleport(mouseVec){
+	OutputLN("draw teleport");
 	var cam = CameraGetCurrent();
 	var camPoint = cam.GetPosition();
-	var forward = cam.GetDirection();
+	var forward = mouseVec;//cam.GetDirection();
 	forward = Norm(forward);
 	var horizonPoint = camPoint+forward*100;
 	
@@ -731,13 +732,11 @@ function KeyboardManager()
 		
 		
 	//show ray
-	if (KeyPressed("M")){
-		showTeleport = false;
+	if (KeyStatus("M")){
+		showTeleport = !showTeleport;
 				
 	}
-	if(KeyPressed("N")){
-		showTeleport = true;
-	}
+	
 	
 	if(KeyPressed(VK_RETURN)){
 		if(showTeleport){
@@ -746,9 +745,7 @@ function KeyboardManager()
 		}
 		
 		
-	}
-	else showTeleport = false;
-	
+	}	
 	
 		
 	// Settaggio subcomponenti della componente attiva: incremento delle componenti
