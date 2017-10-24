@@ -26,12 +26,41 @@ var collisionPoint;
 
 
 //for teleportation
-var showTeleport = false;
+var showTeleport = true;
 var texFloor;
+var texWall;
+var texMusFloor;
 
-var o_wall;				// mesh e obj per il cubo appoggiato sul piano					
-var pos_wall    = [0.0,-5.0,0.0];	// posizione iniziale della palla
-var size_wall = [10.0,1.0,10.0];
+
+var trees = Array(20);
+var size_tree = [1.0,1.0,1.0];
+
+var walls = array(3);
+
+var pos_walls = [-198.0,0.0,0.0,
+				 -120.0,0.0,-100.0,
+				 -120.0,0.0,100.0
+];
+var size_walls = [4.1,1.0,3.0,
+				  3.1,1.0,3.0,
+				  3.1,1.0,3.0
+];
+
+var columns = array(4);
+
+var pos_column = [-60.0,-5,-90.0];
+var size_column = [0.3,0.3,0.3];
+
+
+
+
+var o_floor;				// mesh e obj per il cubo appoggiato sul piano					
+var pos_floor    = [0.0,-5.0,0.0];	// posizione iniziale della palla
+var size_floor = [10.0,1.0,10.0];
+var o_musFloor;				// mesh e obj per il cubo appoggiato sul piano					
+var pos_musFloor    = [-123.0,-4.9,0.0];	// posizione iniziale della palla
+var size_musFloor = [3.0,1.0,4.0];
+
 
 
 var mousePos;
@@ -195,22 +224,49 @@ function OnInit(params)
 	o_cube.SetPosition(pos_cube);
 	o_cube.SetScale(size_cube);
 	
-	cube2 = CVmObj(CVMNewMesh("cubi.aam"));
-	//o_cube = CVmObj(m_cube);
-	cube2.SetPosition(pos_cube);
-	cube2.SetScale(size_cube);
 	
 	
-	o_wall = CVmObj(CVMNewMesh("wall.aam"));
+	o_floor = CVmObj(CVMNewMesh("wall.aam"));
 	//o_cube = CVmObj(m_cube);
-	o_wall.SetPosition(pos_wall);
-	o_wall.SetScale(size_wall);
+	o_floor.SetPosition(pos_floor);
+	o_floor.SetScale(size_floor);
+	
+	o_musFloor = CVmObj(CVMNewMesh("wall.aam"));
+	//o_cube = CVmObj(m_cube);
+	o_musFloor.SetPosition(pos_musFloor);
+	o_musFloor.SetScale(size_musFloor);
+	
+	
+	for (var i = 0; i < len(trees); ++i){
+		trees[i] = CVmObj(CVMNewMesh("tree.aam"));
+		trees[i].SetPosition(Rand(150),0.0,-100+Rand(200));
+		trees[i].SetScale(size_tree);
+	}
+	
+	for (var i = 0; i < len(columns); ++i){
+		columns[i] = CVmObj(CVMNewMesh("12columnModel.aam"));
+		columns[i].SetPosition(pos_column[0],pos_column[1],pos_column[2]+i*60);
+		columns[i].SetScale(size_column);
+	}
+	
+	for (var i = 0; i < len(walls);++i){
+		var j = i*3;
+		walls[i] = CVmObj(CVMNewMesh("wall.aam"));
+		walls[i].SetPosition(pos_walls[j],pos_walls[j+1],pos_walls[j+2]);
+		walls[i].RotateABS(90,1,0,0);
+		walls[i].SetScale(size_walls[j],size_walls[j+1],size_walls[j+2]);
+	}
+	walls[0].RotateABS(90,0,1,0);
+	//walls[0].SetScale(90,10,1);
+	walls[2].RotateABS(180,0,1,0);
 	
 	
 	
 	// Caricamento della texture
 	texSimpson = CVmTexture("simpson.jpg");
 	texFloor = CVmTexture("grass.jpg");
+	texWall = CVmTexture("wall.jpg");
+	texMusFloor = CVmTexture("marble.jpg");
 	
 	// Inizializzazione flag abilitazione lighting e texturing (si legge cosa è abilitato al momento)	
 	light_enabled = glGet(GL_LIGHTING);
@@ -263,17 +319,47 @@ function OnFrame()
 		glStencilMask(0x00);
 		//DrawFloor();
 		glEnable(GL_TEXTURE_2D);
+		glEnable(GL_LIGHTING);
+		for(var i = 0; i < len(trees); ++i){
+			trees[i].Draw();
+		} 
+		
+		for(var i = 0; i < len(walls); ++i){
+			var j = i*3;
+			mat.SetTexture(texWall);
+			mat.ChangeTextureParams(VR_U_TILING,size_walls[j+0]);
+			mat.ChangeTextureParams(VR_V_TILING,size_walls[j+2]);
+			walls[i].GetMesh().ForceMaterial(mat);
+			
+			walls[i].Draw();
+		} 
+		for(var i = 0; i < len(columns); ++i){
+			mat.SetTexture(texWall);
+			//columns[i].GetMesh().ForceMaterial(mat);
+			
+			columns[i].Draw();
+		} 
+		
+		
+		
+		mat.SetTexture(texMusFloor);
+		mat.ChangeTextureParams(VR_U_TILING,size_musFloor[0]);
+		mat.ChangeTextureParams(VR_V_TILING,size_musFloor[2]);
+		o_musFloor.GetMesh().ForceMaterial(mat);
+		o_musFloor.Draw();
+		
 		mat.SetTexture(texFloor);
 		mat.ChangeTextureParams(VR_U_TILING,10);
 		mat.ChangeTextureParams(VR_V_TILING,10);
-		o_wall.GetMesh().ForceMaterial(mat);
+		o_floor.GetMesh().ForceMaterial(mat);
 		
-		o_wall.Draw();
+		o_floor.Draw();
 		//DrawOutlined(selectedObject);
 		for(var i = 0; i < len(objects); ++i){
 			if(objects[i] != selectedObject || showTeleport) objects[i].Draw();
 			else DrawOutlined(selectedObject);
 		} 
+		
 		if(showTeleport){
 			DrawTeleport(mouseVec);
 		}
@@ -289,7 +375,7 @@ function OnFrame()
 
 
 function GetCollisionPoint(p,v){
-	var d = -(pos_wall.y);
+	var d = -(pos_floor.y);
 	//t = - (d + D3DXVec3Dot(&vNormal, &pStart)) 
     //    / D3DXVec3Dot(&vNormal, &ray);
 	var t = -(d+p.y)/(v.y);
@@ -338,7 +424,7 @@ function DrawTeleport(mouseVec){
 	forward = Norm(forward);
 	var horizonPoint = camPoint+forward*100;
 	
-	var isSelected = o_wall.isColliding(camPoint,horizonPoint);
+	var isSelected = o_floor.isColliding(camPoint,horizonPoint);
 	
 	if(isSelected){
 		teleportPos = GetCollisionPoint(camPoint,forward);
