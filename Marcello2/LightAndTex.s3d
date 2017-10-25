@@ -52,8 +52,6 @@ var pos_column = [-60.0,-5,-90.0];
 var size_column = [0.3,0.3,0.3];
 
 
-
-
 var o_floor;				// mesh e obj per il cubo appoggiato sul piano					
 var pos_floor    = [0.0,-5.0,0.0];	// posizione iniziale della palla
 var size_floor = [10.0,1.0,10.0];
@@ -62,11 +60,11 @@ var pos_musFloor    = [-123.0,-4.9,0.0];	// posizione iniziale della palla
 var size_musFloor = [3.0,1.0,4.0];
 
 
-
 var mousePos;
 
 var precMouseW = Mouse.Wheel;
 var translateDistance = 0;
+var prevSelected = VOID;
 
 // Camera globals
 var CamPos = [0.0,0.0,30.0];  	// camera position
@@ -127,7 +125,7 @@ var texSimpson;
 
 
 function KeyStatus(keycode);
-function KeyBoardManager();
+function KeyBoardManager(mouseVec);
 function CameraMoveMouse();
 function DrawGrid();
 function DrawQuad(size, tc);
@@ -173,12 +171,10 @@ function GetSelectedObjects(forward)
 			if(selectedObject==VOID || modulus(obj.GetPosition-camPoint)<minDistance){
 				minDistance = dist;
 				selectedObject = obj;
-				return;
 			}
 		}
 
 	}
-	if(selectedObject!=VOID) selectedObject = VOID;
 	
 }
 
@@ -212,7 +208,7 @@ function OnInit(params)
 	m_luce = CVmNewMesh(VRP_SPHERE,30,10);
 	m_luce.Normalize(1);
 	o_luce = CVmObj(m_luce);
-	o_luce.SetPosition(posL);
+	o_luce.SetPosition(PosL);
 	
 	// Creazione di una sfera "target" dell'illuminazione (l'altro target sarà un quad che disegneremo direttamente in OpenGL)
 	m_sfera = CVmObj(CVmNewMesh(VRP_SPHERE,30,10));
@@ -300,7 +296,8 @@ function OnFrame()
 	var mouseVec = MouseVector();
 	shader.Activate(true);
 	GetSelectedObjects(mouseVec);
-	KeyboardManager();						// Gestisco le pressioni dei tasti
+	//ControlsManager(mouseVec);
+	KeyboardManager(mouseVec);						// Gestisco le pressioni dei tasti
 	//SetXVRWindowFullScreen(true);
 	// Camera manager
 	CameraMoveMouse();						// Gestisco il movimento della camera con il mouse
@@ -351,10 +348,9 @@ function OnFrame()
 		mat.SetTexture(texFloor);
 		mat.ChangeTextureParams(VR_U_TILING,10);
 		mat.ChangeTextureParams(VR_V_TILING,10);
-		o_floor.GetMesh().ForceMaterial(mat);
-		
+		o_floor.GetMesh().ForceMaterial(mat);		
 		o_floor.Draw();
-		//DrawOutlined(selectedObject);
+		
 		for(var i = 0; i < len(objects); ++i){
 			if(objects[i] != selectedObject || showTeleport) objects[i].Draw();
 			else DrawOutlined(selectedObject);
@@ -366,6 +362,9 @@ function OnFrame()
 		else{
 			DrawCrosshairs(mouseVec);
 		}
+		
+		Luce.SetPosition(o_luce.GetPosition());
+		
 	SceneEnd();
 	
 	// Scrive le istruzioni a schermo
@@ -698,9 +697,8 @@ function DrawQuad(size, tc)
 	
 }
 
-
 //----------------------------------------------------------------------
-function KeyboardManager()
+function KeyboardManager(mouseVec)
 //----------------------------------------------------------------------
 {
 	// Immissione parametri posizione luce (raggio, angolo verticale e angolo orizzontale)	
@@ -730,11 +728,7 @@ function KeyboardManager()
 	posL = VectorRotate(-ang_vert, 1, 0, 0, posL);	
 	var temp = VectorRotate(ang_oriz, 0, 1, 0, [posL[0],0,posL[2]]);
 	temp[1] = posL[1];
-	posL = temp;	
-	
-	// Posizionamento della luce e della sfera che la rappresenta
-	Luce.SetPosition(posL);	
-	o_luce.SetPosition(posL);	
+	posL = temp;		
 	
 	// Immissione stato di lighting, texturing e oggetto attivo
 	if (KeyStatus("L"))
@@ -795,6 +789,12 @@ function KeyboardManager()
 	CameraPos = [CameraPos.x, 5, CameraPos.z];
 	CameraSetPosition(CameraPos);
 	
+	if(prevSelected == VOID && selectedObject!=VOID){
+		var v = CameraPos - selectedObject.GetPosition;
+		translateDistance = sqrt(v[0]*v[0] + v.y*v.y + v.z*v.z);
+	}
+	prevSelected = selectedObject;
+	
 	// Scale object
 	var mw = Mouse.Wheel;
 	if (mw > precMouseW && selectedObject!=VOID) 
@@ -804,10 +804,8 @@ function KeyboardManager()
 	precMouseW = Mouse.Wheel;
 	
 	// Translate object
-	if (Mouse.ButtonR  && selectedObject!=VOID) {
-		var v = CameraPos - selectedObject.GetPosition;
-		var l = sqrt(v[0]*v[0] + v.y*v.y +v.z*v.z );
-		selectedObject.Translate(v + l*CameraGetDirection());
+	if (Mouse.ButtonR  && selectedObject!=VOID) {	
+		selectedObject.Translate((mousePos - selectedObject.GetPosition)+ translateDistance*mouseVec);
 	}
 	
 	// Rotate object
@@ -819,19 +817,14 @@ function KeyboardManager()
 		
 	//show ray
 	if (KeyStatus("M")){
-		showTeleport = !showTeleport;
-				
+		showTeleport = !showTeleport;			
 	}
 	
-	
-	//if(KeyPressed(VK_RETURN)){
-	if(Mouse.ButtonR){
+	if(KeyPressed("T")){
 		if(showTeleport){
 			CameraPos = teleportPos;
 			CameraSetPosition(CameraPos);
 		}
-		
-		
 	}	
 	
 		
