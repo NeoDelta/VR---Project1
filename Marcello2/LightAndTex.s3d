@@ -46,6 +46,39 @@ var size_walls = [4.1,1.0,3.0,
 				  3.1,1.0,3.0
 ];
 
+
+var base;
+var size_base = [0.008,0.008,0.008];
+var pos_base = [-160.0,0.0,10.0];
+
+
+var aphrodite;
+var size_aphrodite = [0.003,0.003,0.003];
+var pos_aphrodite = [-140.0,27.0,-60.0];
+
+
+var helmet;
+var size_helmet = [5,5,5];
+var pos_helmet = [30.0,-5.9,40.0];
+
+
+var axe;
+var size_axe = [4,4,4];
+var pos_axe = [-164.0,13.0,0.0];
+
+var temple;
+var size_temple = [4,4,4];
+var pos_temple = [-80.0,-9.0,-30.0];
+
+
+
+
+var cupid;
+var size_cupid = [1.0,1.0,1.0];
+var pos_cupid = [-140.0,-5.0,70.0];
+
+
+
 var columns = array(4);
 
 var pos_column = [-60.0,-5,-90.0];
@@ -143,6 +176,7 @@ function DrawOutlined(obj);
 function DrawCrosshairs(mouseVec);
 function OnlyDrawQuad(center,size,rightV,upV);
 function maximum(a,b);
+function minimum(a,b);
 function MouseToWorld(x, y);
 function MouseVector();
 function GetSelectedObjects(forward);
@@ -162,9 +196,9 @@ function GetSelectedObjects(forward)
 	var cam = CameraGetCurrent();
 	var camPoint = cam.GetPosition();
 	//var forward = mouseVec;
-	var horizonPoint = camPoint+forward*100;
+	var horizonPoint = camPoint+forward*400;
 	
-	var minDistance = 100;
+	var minDistance = 400;
 	for(var i = 0; i < len(objects); ++i){
 		var obj = objects[i];
 		var isSelected = obj.isColliding(camPoint,horizonPoint,collisionPoint);
@@ -224,6 +258,53 @@ function OnInit(params)
 	o_cube.SetPosition(pos_cube);
 	o_cube.SetScale(size_cube);
 	
+	aphrodite = CVmObj(CVMNewMesh("aphrodite_statue.aam"));
+	//o_cube = CVmObj(m_cube);
+	aphrodite.SetPosition(pos_aphrodite);
+	aphrodite.SetScale(size_aphrodite);
+	aphrodite.RotateABS(90,0,1,0);
+	
+	
+	axe = CVmObj(CVMNewMesh("roman_axe.aam"));
+	//o_cube = CVmObj(m_cube);
+	axe.SetPosition(pos_axe);
+	axe.SetScale(size_axe);
+	axe.RotateABS(90,0,1,0);
+	axe.RotateABS(120,1,0,0);
+	axe.RotateABS(10,0,0,1);
+	
+	base = CVmObj(CVMNewMesh("classic_column.aam"));
+	//o_cube = CVmObj(m_cube);
+	base.SetPosition(pos_base);
+	base.SetScale(size_base);
+	//axe.RotateABS(90,0,1,0);
+	
+	temple = CVmObj(CVMNewMesh("ionic_temple.aam"));
+	//o_cube = CVmObj(m_cube);
+	temple.SetPosition(pos_temple);
+	temple.SetScale(size_temple);
+	temple.RotateABS(90,0,1,0);
+	
+	
+	
+	
+	helmet = CVmObj(CVMNewMesh("romanHelmet.aam"));
+	//o_cube = CVmObj(m_cube);
+	helmet.SetPosition(pos_helmet);
+	helmet.SetScale(size_helmet);
+	helmet.RotateABS(120,0,1,0);
+	helmet.RotateABS(30,1,0,0);
+	helmet.RotateABS(-35,0,0,1);
+	
+	
+	
+	cupid = CVmObj(CVMNewMesh("cupid_statue.aam"));
+	//o_cube = CVmObj(m_cube);
+	cupid.SetPosition(pos_cupid);
+	cupid.SetScale(size_cupid);
+	cupid.RotateABS(-90,0,1,0);
+	
+	
 	
 	
 	o_floor = CVmObj(CVMNewMesh("wall.aam"));
@@ -279,7 +360,7 @@ function OnInit(params)
 	mat = CVmMaterial();
 	
 	//selectable object array
-	objects = {o_cube,o_luce, m_sfera};
+	objects = {o_cube,o_luce, m_sfera, aphrodite, helmet, axe, temple, cupid};
 	
 	
 	//crosshairs texture
@@ -340,7 +421,12 @@ function OnFrame()
 			columns[i].Draw();
 		} 
 		
-		
+		aphrodite.Draw();
+		cupid.Draw();
+		helmet.Draw();
+		axe.Draw();
+		base.Draw();
+		temple.Draw();
 		
 		mat.SetTexture(texMusFloor);
 		mat.ChangeTextureParams(VR_U_TILING,size_musFloor[0]);
@@ -356,8 +442,8 @@ function OnFrame()
 		o_floor.Draw();
 		//DrawOutlined(selectedObject);
 		for(var i = 0; i < len(objects); ++i){
-			if(objects[i] != selectedObject || showTeleport) objects[i].Draw();
-			else DrawOutlined(selectedObject);
+			/*if(objects[i] != selectedObject || showTeleport)*/ objects[i].Draw();
+			//else DrawOutlined(selectedObject);
 		} 
 		
 		if(showTeleport){
@@ -369,7 +455,7 @@ function OnFrame()
 	SceneEnd();
 	
 	// Scrive le istruzioni a schermo
-	DrawTextLayer();
+	//DrawTextLayer();
 	
 }
 
@@ -417,7 +503,6 @@ function MouseVector(){
 }
 
 function DrawTeleport(mouseVec){
-	OutputLN("draw teleport");
 	var cam = CameraGetCurrent();
 	var camPoint = cam.GetPosition();
 	var forward = mouseVec;//cam.GetDirection();
@@ -443,24 +528,32 @@ function DrawOutlined(obj){
 	glStencilFunc(GL_ALWAYS, 1, 0xFF);
     glStencilMask(0xFF);
 	//	
-	obj.SetScale(size_cube);
+	var origScale = obj.GetScale();
 	obj.Draw();
 	//o_cube.DrawBoundingBox();
 		glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
         glStencilMask(0x00);
         glDisable(GL_DEPTH_TEST);
         shader.Start();	
-        obj.SetScale(size_cube+[0.5,0.5,0.5]);
+        obj.SetScale(origScale+[0.5,0.5,0.5]);
         obj.Draw();
         shader.Stop();
         glStencilMask(0xFF);
         glEnable(GL_DEPTH_TEST);
+        
+    obj.SetScale(origScale);
 }
 
 function maximum(a,b){
 	if(a > b) return a;
 	return b;
 }
+
+function minimum(a,b){
+	if(a < b) return a;
+	return b;
+}
+
 
 function DrawCrosshairs(mouseVec){
 	
@@ -491,23 +584,26 @@ function DrawCrosshairs(mouseVec){
 		var p2 = [bbox[3]*s[0],bbox[4]*s[1],bbox[5]*s[2]];
 		var r = maximum(modulus(p1),modulus(p2));
 		dist = modulus(CameraGetPosition()-selectedObject.GetPosition())-r;
+		dist = minimum(dist,40);
 		pos += /*Norm(selectedObject.GetPosition()-CameraGetPosition())*/mouseVec*dist;
+		
+		crossShader.Start();
+		if(selectedObject !=Void){
+			crossShader.SetParameter("alpha", 1.0);
+		}
+		else{
+			crossShader.SetParameter("alpha", 0.3);
+		}
+		OnlyDrawQuad(pos,1,CameraGetXAxis(),CameraGetYAxis());
+		crossShader.Stop();
+		glEnable(GL_STENCIL_TEST);
+		glEnable(GL_DEPTH_TEST);
 		
 	}
 	
-	pos += mouseVec*dist;
+	//pos += mouseVec*dist;
 	
-	crossShader.Start();
-	if(selectedObject !=Void){
-		crossShader.SetParameter("alpha", 1.0);
-	}
-	else{
-		crossShader.SetParameter("alpha", 0.3);
-	}
-	OnlyDrawQuad(pos,1,CameraGetXAxis(),CameraGetYAxis());
-	crossShader.Stop();
-	glEnable(GL_STENCIL_TEST);
-	glEnable(GL_DEPTH_TEST);
+	
 	
 	
 }
