@@ -370,6 +370,13 @@ function OnFrame()
 		o_floor.GetMesh().ForceMaterial(mat);		
 		o_floor.Draw();
 		
+		ui_c1.ModulateMaterials(0.5,0,0);
+		ui_c2.ModulateMaterials(0,0.5,0);	
+		ui_c3.ModulateMaterials(0,0,0.5);	
+		if(selectedColor == 1) ui_c1.ModulateMaterials(1.5,0,0);
+		if(selectedColor == 2) ui_c2.ModulateMaterials(0,1.5,0);		
+		if(selectedColor == 3) ui_c3.ModulateMaterials(0,0,1.5);	
+			
 		for(var i = 0; i < len(objects); ++i){
 			if(objects[i] != selectedObject || showTeleport) objects[i].Draw();
 			else DrawOutlined(selectedObject);
