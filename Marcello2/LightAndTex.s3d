@@ -71,6 +71,21 @@ var size_temple = [4,4,4];
 var pos_temple = [-80.0,-9.0,-30.0];
 
 
+var bigTemple;
+var size_bigTemple = [100,100,100];
+var pos_bigTemple = [0,-160,-1500.0];
+
+
+var door;
+var size_door = [4,6,4];
+var pos_door = [-196.0,-5.0,-30.0];
+
+
+var threshold;
+var size_threshold = [0.51,1,0.6];
+var pos_threshold = [-197.99,8,-30.0];
+
+
 
 
 var cupid;
@@ -89,10 +104,11 @@ var size_column = [0.3,0.3,0.3];
 
 var o_floor;				// mesh e obj per il cubo appoggiato sul piano					
 var pos_floor    = [0.0,-5.0,0.0];	// posizione iniziale della palla
-var size_floor = [10.0,1.0,10.0];
+var size_floor = [100.0,1.0,100.0];
 var o_musFloor;				// mesh e obj per il cubo appoggiato sul piano					
 var pos_musFloor    = [-123.0,-4.9,0.0];	// posizione iniziale della palla
 var size_musFloor = [3.0,1.0,4.0];
+var texBlack;
 
 
 
@@ -286,6 +302,26 @@ function OnInit(params)
 	temple.RotateABS(90,0,1,0);
 	
 	
+	bigTemple = CVmObj(CVMNewMesh("ionic_temple.aam"));
+	//o_cube = CVmObj(m_cube);
+	bigTemple.SetPosition(pos_bigTemple);
+	bigTemple.SetScale(size_bigTemple);
+	//bigTemple.RotateABS(90,0,1,0);
+	
+	
+	
+	door = CVmObj(CVMNewMesh("fireplace.aam"));
+	//o_cube = CVmObj(m_cube);
+	door.SetPosition(pos_door);
+	door.SetScale(size_door);
+	door.RotateABS(90,0,1,0);
+	
+	threshold = CVmObj(CVMNewMesh("wall.aam"));
+	threshold.SetPosition(pos_threshold);
+	threshold.RotateABS(90,1,0,0);
+	threshold.SetScale(size_threshold);
+	threshold.RotateABS(90,0,1,0);
+	
 	
 	
 	helmet = CVmObj(CVMNewMesh("romanHelmet.aam"));
@@ -348,6 +384,8 @@ function OnInit(params)
 	texFloor = CVmTexture("grass.jpg");
 	texWall = CVmTexture("wall.jpg");
 	texMusFloor = CVmTexture("marble.jpg");
+	texBlack = CVmTexture("black.png");
+	
 	
 	// Inizializzazione flag abilitazione lighting e texturing (si legge cosa è abilitato al momento)	
 	light_enabled = glGet(GL_LIGHTING);
@@ -360,7 +398,7 @@ function OnInit(params)
 	mat = CVmMaterial();
 	
 	//selectable object array
-	objects = {o_cube,o_luce, m_sfera, aphrodite, helmet, axe, temple, cupid};
+	objects = {o_cube,o_luce, m_sfera, aphrodite, helmet, axe, temple, cupid, threshold};
 	
 	
 	//crosshairs texture
@@ -405,6 +443,12 @@ function OnFrame()
 			trees[i].Draw();
 		} 
 		
+		
+		mat.SetTexture(texBlack);
+		threshold.GetMesh().ForceMaterial(mat);
+		
+		threshold.Draw();
+		
 		for(var i = 0; i < len(walls); ++i){
 			var j = i*3;
 			mat.SetTexture(texWall);
@@ -427,6 +471,12 @@ function OnFrame()
 		axe.Draw();
 		base.Draw();
 		temple.Draw();
+		door.Draw();
+		
+		mat.SetTexture(texMusFloor);
+		bigTemple.GetMesh().ForceMaterial(mat);
+		bigTemple.Draw();
+		
 		
 		mat.SetTexture(texMusFloor);
 		mat.ChangeTextureParams(VR_U_TILING,size_musFloor[0]);
@@ -891,31 +941,51 @@ function KeyboardManager()
 	CameraPos = [CameraPos.x, 5, CameraPos.z];
 	CameraSetPosition(CameraPos);
 	
-	// Scale object
-	var mw = Mouse.Wheel;
-	if (mw > precMouseW && selectedObject!=VOID) 
-		selectedObject.GetMesh().Scale(1-0.1,1-0.1,1-0.1);
-	else if (mw < precMouseW && selectedObject!=VOID) 
-		selectedObject.GetMesh().Scale(1+0.1,1+0.1,1+0.1);	
-	precMouseW = Mouse.Wheel;
+	
 	
 	// Translate object
 	if (Mouse.ButtonR  && selectedObject!=VOID) {
+		if(selectedObject == threshold){
+			CameraPos = [300,0,-1500];
+			CameraSetPosition(CameraPos);
+		}
+		else{
 		var v = CameraPos - selectedObject.GetPosition;
 		var l = sqrt(v[0]*v[0] + v.y*v.y +v.z*v.z );
 		selectedObject.Translate(v + l*CameraGetDirection());
+		
+		}
 	}
 	
-	// Rotate object
-	if (KeyPressed("Q")  && selectedObject!=VOID)
-		selectedObject.Rotate(1, 0, 1, 0);
-	if (KeyPressed("E")  && selectedObject!=VOID)
-		selectedObject.Rotate(-1, 0, 1, 0);	
+	
+	if(selectedObject!=VOID && selectedObject != threshold){
+		// Rotate object
+		if (KeyPressed("Q")  && selectedObject!=VOID)
+			selectedObject.Rotate(1, 0, 1, 0);
+		if (KeyPressed("E")  && selectedObject!=VOID)
+			selectedObject.Rotate(-1, 0, 1, 0);	
+			
+			
+		// Scale object
+		var mw = Mouse.Wheel;
+		if (mw > precMouseW && selectedObject!=VOID) 
+			selectedObject.GetMesh().Scale(1-0.1,1-0.1,1-0.1);
+		else if (mw < precMouseW && selectedObject!=VOID) 
+			selectedObject.GetMesh().Scale(1+0.1,1+0.1,1+0.1);	
+		precMouseW = Mouse.Wheel;
+		
+	}
 		
 		
 	//show ray
 	if (KeyStatus("M")){
 		showTeleport = !showTeleport;
+				
+	}
+	
+	
+	if (KeyStatus("N")){
+		CameraSetPosition(camPos);
 				
 	}
 	
